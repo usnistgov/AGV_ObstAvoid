@@ -136,7 +136,7 @@ public class ShapeWTransform implements Shape {
         double src[] = {r.getX(), r.getY(), r.getX() + r.getWidth(), r.getY() + r.getHeight()};
         double dst[] = new double[4];
         this.affineTransform.transform(src, 0, dst, 0, 2);
-        return new Rectangle2D.Double(
+        return new Rectangle2Dd(
                 Math.min(dst[0], dst[2]),
                 Math.min(dst[1], dst[3]),
                 Math.abs((dst[2] - dst[0])),

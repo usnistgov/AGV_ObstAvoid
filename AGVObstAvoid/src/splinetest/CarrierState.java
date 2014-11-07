@@ -81,6 +81,9 @@ public class CarrierState extends Point2Dd {
     }
 
     
+    public Point2Dd unit() {
+        return getAngle().unit();
+    }
     
     /**
      * @return the lastGoalType
@@ -133,13 +136,13 @@ public class CarrierState extends Point2Dd {
      * @param _angle the angle to set
      */
     public void setAngle(AngleD _angle) {
-        if (null != this.angle && null != _angle) {
-            if (Math.abs(AngleD.diff(_angle, this.angle).getValue()) > Math.PI / 36) {
-                System.out.println("_angle = " + _angle);
-                System.out.println("this.angle = " + this.angle);
-                System.out.println("AngleD.diff(_angle, this.angle) = " + AngleD.diff(_angle, this.angle));
-            }
-        }
+//        if (null != this.angle && null != _angle) {
+//            if (Math.abs(AngleD.diff(_angle, this.angle).getValue()) > Math.PI / 36) {
+//                System.out.println("_angle = " + _angle);
+//                System.out.println("this.angle = " + this.angle);
+//                System.out.println("AngleD.diff(_angle, this.angle) = " + AngleD.diff(_angle, this.angle));
+//            }
+//        }
         this.angle = _angle;
         this.reverseAngle = null;
         this.updateShape();
@@ -217,6 +220,26 @@ public class CarrierState extends Point2Dd {
     private double width = 0.0;
     private double back = 0.0;
     private double front = 0.0;
+
+        private Shape arrow;
+
+    /**
+     * Get the value of arrow
+     *
+     * @return the value of arrow
+     */
+    public Shape getArrow() {
+        return arrow;
+    }
+
+    /**
+     * Set the value of arrow
+     *
+     * @param arrow new value of arrow
+     */
+    public void setArrow(Shape arrow) {
+        this.arrow = arrow;
+    }
 
     /**
      * Get the value of plannerPointDisplaySize
@@ -368,6 +391,17 @@ public class CarrierState extends Point2Dd {
         return getProjectedState(time).getImmediateBoundaries();
     }
 
+    public boolean checkObstacleEx(Obstacle o, double expansion) {
+        if (null == poly) {
+            poly = getPoly();
+        }
+        double orig_radius = o.radius;
+        o.radius += expansion;
+        boolean result = !Planner.checkPoly(poly, o);
+        o.radius = orig_radius;
+        return result;
+    }
+
     public boolean checkObstacle(Obstacle o) {
         if (null == poly) {
             poly = getPoly();
@@ -411,7 +445,12 @@ public class CarrierState extends Point2Dd {
             poly = getPoly();
         }
         if (null != obstacles) {
-            for (Obstacle o : obstacles) {
+            for (int i = 0; i < obstacles.size(); i++) {
+                Obstacle o = obstacles.get(i);
+                if(o.radius < java.lang.Double.MIN_NORMAL) {
+                    obstacles.remove(o);
+                    continue;
+                }
                 boolean result = checkObstacle(o);
                 if (result) {
                     this.setColliding(true);
@@ -446,7 +485,7 @@ public class CarrierState extends Point2Dd {
         boolean last_sign = false;
         boolean last_sign_set = false;
         int sign_change_count = 0;
-        System.out.println("o = " + o);
+//        System.out.println("o = " + o);
         for (int i = 0; i < poly.size(); i++) {
             if (last_pt == null) {
                 last_pt = poly.get(poly.size() - 1);
@@ -516,10 +555,24 @@ public class CarrierState extends Point2Dd {
         this.setShape(p);
         this.setAffineTransform(null);
         if (this.type != CarrierStateTypeEnum.LIVE) {
+            sz *= 2.0;
             this.line = new Line2Dd(x, y,
                     (x + angle.cos() * sz / 2.0), (y + angle.sin() * sz / 2.0));
+            Polygon2Dd arrowPoly = new Polygon2Dd();
+            arrowPoly.addPoint(new Point2Dd(x + angle.cos() * sz / 2.0, y + angle.sin() * sz / 2.0));
+            arrowPoly.addPoint(new Point2Dd(x + angle.cos() * sz / 2.0 - angle.sin() * sz / 2.0, 
+                    y + angle.sin() * sz / 2.0 + angle.cos() * sz / 2.0));
+            arrowPoly.addPoint(new Point2Dd(x + angle.cos() * sz, y + angle.sin() * sz));
+            arrowPoly.addPoint(new Point2Dd(x + angle.cos() * sz / 2.0 + angle.sin() * sz / 2.0, 
+                    y + angle.sin() * sz / 2.0 - angle.cos() * sz / 2.0));
+            arrowPoly.closePath();
+            this.arrow = arrowPoly;
+            //arrowPoly.addPoint((int)(x + angle.cos() * sz / 2.0), (int)(y + angle.sin() * sz / 2.0));
+            
         } else {
             this.line = null;
+            this.arrow = null;
+            
         }
     }
     private static int next_id = 1;
@@ -561,7 +614,8 @@ public class CarrierState extends Point2Dd {
         if (la.length > 3) {
             cs.setType(CarrierStateTypeEnum.valueOf(la[3]));
         }
-        if (cs.type == CarrierStateTypeEnum.START) {
+        if (cs.type == CarrierStateTypeEnum.START
+                || cs.type == CarrierStateTypeEnum.WAYPOINT) {
             if (la.length > 4) {
                 cs.setId(Integer.valueOf(la[4]));
                 if (cs.id >= next_id) {
@@ -581,7 +635,9 @@ public class CarrierState extends Point2Dd {
                     next_id = goal_id+1;
                 }
             }
-        } else if (cs.type == CarrierStateTypeEnum.GOAL) {
+        } 
+        if (cs.type == CarrierStateTypeEnum.GOAL
+                || cs.type == CarrierStateTypeEnum.WAYPOINT) {
             if (la.length > 4) {
                 cs.setId(Integer.valueOf(la[4]));
                 if (cs.id >= next_id) {
@@ -594,7 +650,7 @@ public class CarrierState extends Point2Dd {
                 if (start_id > 0) {
                     CarrierState start = idMap.get(start_id);
                     if (start != null) {
-                        cs.setGoal(start);
+                        cs.setStart(start);
                     }
                 }
                 if(next_id <= start_id) {
@@ -651,8 +707,14 @@ public class CarrierState extends Point2Dd {
      * @param goal new value of goal
      */
     public void setGoal(CarrierState _goal) {
+        CarrierState oldGoal = this.goal;
+        this.goal = null;
+        if(null != oldGoal && this == oldGoal.getStart()) {
+            oldGoal.setStart(null);
+        }
         this.goal = _goal;
-        if (this.type == CarrierStateTypeEnum.START
+        if ((this.type == CarrierStateTypeEnum.START ||
+                this.type == CarrierStateTypeEnum.WAYPOINT)
                 && _goal != null
                 && _goal.getStart() == null) {
             _goal.setStart(this);
@@ -768,8 +830,14 @@ public class CarrierState extends Point2Dd {
      * @param _start the start to set
      */
     public void setStart(CarrierState _start) {
+        CarrierState oldStart = this.start;
+        this.start = null;
+        if(null != oldStart && this == oldStart.getGoal()) {
+            oldStart.setGoal(null);
+        }
         this.start = _start;
-        if (this.type == CarrierStateTypeEnum.GOAL
+        if ((this.type == CarrierStateTypeEnum.GOAL ||
+                this.type == CarrierStateTypeEnum.WAYPOINT)
                 && _start != null
                 && _start.getGoal() == null) {
             _start.setGoal(this);

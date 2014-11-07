@@ -75,20 +75,26 @@ public class PlannedPath {
         this.PrePostPathDist = PrePostPathDist;
     }
 
+    private LinkedList<Point2Dd> extendedControlPoints;
+    
+    public LinkedList<Point2Dd> getExtendedControlPoints() {
+        return extendedControlPoints;
+    }
+    
     public void updateCurvesPathsOutlines() {
         if (null != this.controlPoints) {
-            LinkedList<Point2Dd> tempControlPoints = new LinkedList<>();
-            tempControlPoints.addAll(this.controlPoints);
+            extendedControlPoints = new LinkedList<>();
+            extendedControlPoints.addAll(this.controlPoints);
             if (!this.splinePanel.isCrab()) {
-                tempControlPoints.add(1,
-                        Point2Dd.addPtDistAngle(startPoint, PrePostPathDist, startPoint.getAngle()));
-                tempControlPoints.add(tempControlPoints.size() - 1,
-                        Point2Dd.addPtDistAngle(goalPoint, -PrePostPathDist, goalPoint.getAngle()));
+                extendedControlPoints.addFirst(
+                        Point2Dd.addPtDistAngle(startPoint, -PrePostPathDist, startPoint.getAngle()));
+                extendedControlPoints.add(
+                        Point2Dd.addPtDistAngle(goalPoint, +PrePostPathDist, goalPoint.getAngle()));
             }
             List<Point2Dd> newCurvePoints = BSplineCreator.createBSpline(this.splinePanel.getMinCurveIterations(),
                     this.splinePanel.getMaxCurveIterations(),
                     this.splinePanel.getCurveIterationDist(),
-                    tempControlPoints);
+                    extendedControlPoints);
             this.setCurvePoints(newCurvePoints);
             Path2D.Double newControlPath = new Path2D.Double();
             boolean first = true;
@@ -115,8 +121,10 @@ public class PlannedPath {
      * @param startPoint the startPoint to set
      */
     public void setStartPoint(CarrierState startPoint) {
+        
         this.startPoint = startPoint;
         this.startVector = new Point2Dd(startPoint.getAngle().cos(), startPoint.getAngle().sin());
+        this.startPoint.setPath(this);
     }
 
     /**
@@ -271,7 +279,7 @@ public class PlannedPath {
             last_pt = pt2d;
             last_outline_pt = pt2d;
         }
-        System.out.println("planOutline.size() = " + planOutline.size());
+//        System.out.println("planOutline.size() = " + planOutline.size());
         return planOutline;
     }
 

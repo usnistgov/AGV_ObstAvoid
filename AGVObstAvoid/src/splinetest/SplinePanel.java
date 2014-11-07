@@ -43,6 +43,7 @@ import java.awt.geom.Rectangle2D;
 import java.io.BufferedReader;
 import java.io.StringReader;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Arrays;
 import java.util.Collection;
@@ -55,6 +56,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.SynchronousQueue;
 import javax.swing.JMenu;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
@@ -67,6 +70,7 @@ import static splinetest.SplineDrawMode.OBSTACLE;
 import static splinetest.SplineDrawMode.SELECT;
 import static splinetest.SplineDrawMode.START;
 import static splinetest.SplineDrawMode.VERT_BOUNDARY;
+import static splinetest.SplineDrawMode.WAYPOINT;
 
 /**
  * Main JPanel for displaying and drawing or selecting objects in the 2D world
@@ -86,6 +90,63 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
     private List<PlannedPath> plannedPaths;
     private boolean DebugVehicleComm;
     private int maxCntrlPts = -1;
+    private List<CarrierState> waypoints;
+    private boolean ignoreBoundaries = false;
+
+    /**
+     * Get the value of ignoreBoundaries
+     *
+     * @return the value of ignoreBoundaries
+     */
+    public boolean isIgnoreBoundaries() {
+        return ignoreBoundaries;
+    }
+
+    /**
+     * Set the value of ignoreBoundaries
+     *
+     * @param ignoreBoundaries new value of ignoreBoundaries
+     */
+    public void setIgnoreBoundaries(boolean ignoreBoundaries) {
+        this.ignoreBoundaries = ignoreBoundaries;
+    }
+    private boolean ignoreObstacles = false;
+
+    /**
+     * Get the value of ignoreObstacles
+     *
+     * @return the value of ignoreObstacles
+     */
+    public boolean isIgnoreObstacles() {
+        return ignoreObstacles;
+    }
+
+    /**
+     * Set the value of ignoreObstacles
+     *
+     * @param ignoreObstacles new value of ignoreObstacles
+     */
+    public void setIgnoreObstacles(boolean ignoreObstacles) {
+        this.ignoreObstacles = ignoreObstacles;
+    }
+
+    /**
+     * Get the value of waypoints
+     *
+     * @return the value of waypoints
+     */
+    public List<CarrierState> getWaypoints() {
+        return waypoints;
+    }
+
+    /**
+     * Set the value of waypoints
+     *
+     * @param waypoints new value of waypoints
+     */
+    public void setWaypoints(List<CarrierState> waypoints) {
+        this.waypoints = waypoints;
+    }
 
     /**
      * Get the value of maxCntrlPts
@@ -132,6 +193,22 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         return drawMode;
     }
 
+    public void clearTmpGoal() {
+        if (null != this.tmpGoal) {
+            if (null != this.startPoints && null == this.plan_thread) {
+                for (CarrierState sp : this.startPoints) {
+                    if (sp.getGoal() == tmpGoal) {
+                        sp.setGoal(null);
+                        sp.setPlannerList(null);
+                        sp.updateShape();
+                    }
+                }
+            }
+            this.tmpGoal = null;
+            this.repaint();
+        }
+    }
+
     /**
      * Set the value of drawMode
      *
@@ -139,6 +216,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
      */
     public void setDrawMode(SplineDrawMode drawMode) {
         this.drawMode = drawMode;
+        this.clearTmpGoal();
         this.ClearSelection();
     }
     private int MinCurveIterations = 5;
@@ -310,6 +388,17 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                 cs.setWidth(this.vehicleWidth);
             }
         }
+        if (null != this.waypoints) {
+            for (CarrierState cs : this.waypoints) {
+                cs.setWidth(this.vehicleWidth);
+            }
+        }
+        if (null != this.carriers) {
+            for (CarrierState cs : this.carriers) {
+                cs.setWidth(this.vehicleWidth);
+            }
+        }
+        this.repaint();
     }
     private double defaultObsRadius = 75.0;
     private Point2Dd[] CurveRightPoints;
@@ -377,7 +466,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         this.CurveLeftPoints[index] = newCurveLeftPoints;
     }
     private List<Point2Dd> CurvePoints;
-    private boolean ShowOutline = false;
+    private boolean ShowOutline = true;
 
     /**
      * Get the value of ShowOutline
@@ -419,10 +508,10 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         if (this.CurvePoints != null) {
             this.curvePath = new Path2D.Double();
             Point2Dd last_pt = null;
-            LinkedList<Point2Dd> NewCurveLeftPoints =
-                    new LinkedList<>();
-            LinkedList<Point2Dd> NewCurveRightPoints =
-                    new LinkedList<>();
+            LinkedList<Point2Dd> NewCurveLeftPoints
+                    = new LinkedList<>();
+            LinkedList<Point2Dd> NewCurveRightPoints
+                    = new LinkedList<>();
 //            outlines = new LinkedList<>();
             Point2Dd diff = new Point2Dd();
             Point2Dd diffu = new Point2Dd();
@@ -570,10 +659,59 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
     public void setOutlineDistIncrement(double outlineDistIncrement) {
         this.outlineDistIncrement = outlineDistIncrement;
     }
-    private PlannerInput pi = new PlannerInput();
     private List<Boundary> boundaries = new LinkedList<Boundary>();
 
+    private Rectangle2Dd planningAreaRect = null;
+
+    /**
+     * Get the value of planningAreaRect
+     *
+     * @return the value of planningAreaRect
+     */
+    public Rectangle2Dd getPlanningAreaRect() {
+        return planningAreaRect;
+    }
+
+    /**
+     * Set the value of planningAreaRect
+     *
+     * @param planningAreaRect new value of planningAreaRect
+     */
+    public void setPlanningAreaRect(Rectangle2Dd planningAreaRect) {
+        this.planningAreaRect = planningAreaRect;
+    }
+
     public PlannerInput getPlannerInput() {
+        PlannerInput pi = new PlannerInput();
+        pi.rectB = this.getPlanningAreaRect();
+        if (null == pi.rectB) {
+            pi.rectB = this.getBoundingRect();
+        }
+        pi.use_static_planner_list = this.use_static_planner_list;
+        pi.path_uncertainty = this.pathUncertainty;
+        pi.obstacles = this.obstacles;
+        pi.veh_width = this.vehicleWidth;
+        pi.front = this.vehicleFront;
+        pi.back = this.vehicleBack;
+        pi.crab = this.crab;
+        pi.reverse = this.reverse;
+        pi.min_turn_radius = this.getMinTurnRadius();
+        pi.max_turn_angle_degrees = this.getMaxTurnAngleDegrees();
+        pi.max_pt2pt_dist = this.getMax_pt2pt_dist();
+        pi.plannerResolution = this.getPlannerResolution();
+        pi.max_cntrl_pts = this.getMaxCntrlPts();
+        pi.planningHorizon = this.getPlanningHorizon();
+        pi.segStartLength = this.getSegStartLength();
+        if (this.ignoreBoundaries) {
+            pi.boundaries = null;
+        } else {
+//                if (this.ExclusivePaths && null != this.boundaries) {
+//                    fullBoundaries.addAll(this.boundaries);
+//                    pi.boundaries = fullBoundaries;
+//                } else {
+            pi.boundaries = this.boundaries;
+//                }
+        }
         return pi;
     }
 
@@ -669,7 +807,73 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
     public void setPlannerResolution(double plannerResolution) {
         this.plannerResolution = plannerResolution;
     }
+    private double speed = 25.0;
+
+    /**
+     * Get the value of speed
+     *
+     * @return the value of speed
+     */
+    public double getSpeed() {
+        return speed;
+    }
+
+    /**
+     * Set the value of speed
+     *
+     * @param speed new value of speed
+     */
+    public void setSpeed(double speed) {
+        this.speed = speed;
+    }
+    private double maxTurnAngleDegrees = 75.0;
+
+    /**
+     * Get the value of maxTurnAngleDegrees
+     *
+     * @return the value of maxTurnAngleDegrees
+     */
+    public double getMaxTurnAngleDegrees() {
+        return maxTurnAngleDegrees;
+    }
+
+    /**
+     * Set the value of maxTurnAngleDegrees
+     *
+     * @param maxTurnAngleDegrees new value of maxTurnAngleDegrees
+     */
+    public void setMaxTurnAngleDegrees(double maxTurnAngleDegrees) {
+        this.maxTurnAngleDegrees = maxTurnAngleDegrees;
+    }
     Thread plan_thread = null;
+
+    class PlanningArgs {
+
+        final public List<PlannedPath> newPlannedPaths;
+        final public boolean use_exclusive_paths;
+
+        public PlanningArgs(final List<PlannedPath> _newPlannedPaths, final boolean _use_exclusive_paths) {
+            this.newPlannedPaths = _newPlannedPaths;
+            this.use_exclusive_paths = _use_exclusive_paths;
+        }
+    };
+    BlockingQueue<PlanningArgs> planQueue = new SynchronousQueue<>();
+    boolean showing_planner_msg = false;
+    boolean planning = false;
+    public boolean running_param_test = false;
+
+    public void interruptPlanning() {
+        try {
+            if (null != plan_thread) {
+                plan_thread.interrupt();;
+                plan_thread.join();
+                plan_thread = null;
+                planning = false;
+            }
+        } catch (Exception exception) {
+            exception.printStackTrace();
+        }
+    }
 
     private boolean tryReplan() {
         try {
@@ -678,90 +882,130 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                     return true;
                 }
             }
-            if (null != plan_thread && plan_thread.isAlive()) {
-                plan_thread.interrupt();
-                plan_thread.join();
-                plan_thread = null;
+            if (running_param_test) {
+                return true;
+            }
+            if (planning) {
+                return true;
+            }
+            if (!planQueue.isEmpty()) {
+                return true;
+            }
+            if (showing_planner_msg) {
+                return true;
             }
             final List<Boundary> fullBoundaries = new LinkedList<>();
-            pi.path_uncertainty = this.pathUncertainty;
-            pi.obstacles = this.obstacles;
-            pi.veh_width = this.vehicleWidth;
-            pi.front = this.vehicleFront;
-            pi.back = this.vehicleBack;
-            pi.crab = this.crab;
-            pi.reverse = this.reverse;
-            pi.min_turn_radius = this.getMinTurnRadius();
-            pi.max_pt2pt_dist = this.getMax_pt2pt_dist();
-            pi.plannerResolution = this.getPlannerResolution();
-            pi.max_cntrl_pts = this.getMaxCntrlPts();
-            pi.planningHorizon = this.getPlanningHorizon();
-            if (this.ExclusivePaths) {
-                fullBoundaries.addAll(this.boundaries);
-                pi.boundaries = fullBoundaries;
-            } else {
-                pi.boundaries = this.boundaries;
-            }
-            if (null != this.startPoints
-                    && null != this.goalPoints) {
-                List<PlannerPoint> ll = Planner.createPlannerList(pi, this.startPoints, this.goalPoints);
+
+            if ((null != this.startPoints
+                    && null != this.goalPoints) || null != this.waypoints) {
+                PlannerInput pi = this.getPlannerInput();
+                if (this.ignoreBoundaries) {
+                    pi.boundaries = null;
+                } else {
+                    if (this.ExclusivePaths && null != this.boundaries) {
+                        fullBoundaries.addAll(this.boundaries);
+                        pi.boundaries = fullBoundaries;
+                    } else {
+                        pi.boundaries = this.boundaries;
+                    }
+                }
+                List<PlannerPoint> ll = Planner.createPlannerList(pi, this.startPoints, this.goalPoints, this.waypoints);
                 final List<PlannedPath> newPlannedPaths = new LinkedList<>();
-                Collections.sort(this.startPoints, new Comparator<CarrierState>() {
-                    @Override
-                    public int compare(CarrierState o1, CarrierState o2) {
-                        return Integer.compare(o1.getId(), o2.getId());
-                    }
-                });
-                for (CarrierState sp : this.startPoints) {
-                    if (sp.isColliding()) {
-                        continue;
-                    }
-                    CarrierState gp = sp.getGoal();
-                    if (null != gp && gp.getType() == CarrierStateTypeEnum.GOAL) {
-                        if (gp.isColliding()) {
+                if (null != this.startPoints) {
+                    Collections.sort(this.startPoints, new Comparator<CarrierState>() {
+                        @Override
+                        public int compare(CarrierState o1, CarrierState o2) {
+                            return Integer.compare(o1.getId(), o2.getId());
+                        }
+                    });
+                    for (CarrierState sp : this.startPoints) {
+                        if (sp.isColliding()) {
                             continue;
                         }
-                        PlannedPath path = new PlannedPath(this);
-                        path.setStartPoint(sp);
-                        path.setGoalPoint(gp);
-                        pi.start = sp;
-                        pi.goal = gp;
-                        List<PlannerPoint> llcopy = new LinkedList<>();
-                        llcopy.addAll(ll);
-                        sp.setPlannerList(llcopy);
-                        gp.setPlannerList(llcopy);
-                        path.setPlannerInput(pi.clone());
-                        newPlannedPaths.add(path);
+                        CarrierState gp = sp.getGoal();
+                        if (null != gp
+                                && (gp.getType() == CarrierStateTypeEnum.GOAL
+                                || gp.getType() == CarrierStateTypeEnum.WAYPOINT)) {
+                            if (gp.isColliding()) {
+                                continue;
+                            }
+                            PlannedPath path = new PlannedPath(this);
+                            path.setStartPoint(sp);
+                            path.setGoalPoint(gp);
+                            pi.start = sp;
+                            pi.goal = gp;
+                            List<PlannerPoint> llcopy = new LinkedList<>();
+                            llcopy.addAll(ll);
+                            sp.setPlannerList(llcopy);
+                            gp.setPlannerList(llcopy);
+                            path.setPlannerInput(pi.clone());
+                            newPlannedPaths.add(path);
+                        }
+                    }
+                }
+                if (null != this.waypoints) {
+                    for (CarrierState wp : this.waypoints) {
+                        if (wp.isColliding()) {
+                            continue;
+                        }
+                        CarrierState gp = wp.getGoal();
+                        if (null != gp
+                                && (gp.getType() == CarrierStateTypeEnum.GOAL
+                                || gp.getType() == CarrierStateTypeEnum.WAYPOINT)) {
+                            if (gp.isColliding()) {
+                                continue;
+                            }
+                            PlannedPath path = new PlannedPath(this);
+                            path.setStartPoint(wp);
+                            path.setGoalPoint(gp);
+                            pi.start = wp;
+                            pi.goal = gp;
+                            List<PlannerPoint> llcopy = new LinkedList<>();
+                            llcopy.addAll(ll);
+                            wp.setPlannerList(llcopy);
+                            gp.setPlannerList(llcopy);
+                            path.setPlannerInput(pi.clone());
+                            newPlannedPaths.add(path);
+                        }
                     }
                 }
                 final boolean use_exclusive_paths = this.isExclusivePaths();
-                plan_thread = new Thread(new Runnable() {
-                    @Override
-                    public void run() {
-                        for (int i = 0; i < newPlannedPaths.size(); i++) {
-                            if (Thread.currentThread().isInterrupted()) {
-                                return;
-                            }
-                            PlannedPath path = newPlannedPaths.get(i);
-                            CarrierState sp = path.getStartPoint();
-                            CarrierState gp = path.getGoalPoint();
-                            PlannerInput pi = path.getPlannerInput();
-                            pi.start = sp;
-                            pi.goal = gp;
-                            if (use_exclusive_paths) {
-                                List<Boundary> path_outline =
-                                        path.getPlanOutLine();
-                                if (path_outline != null) {
-                                    fullBoundaries.addAll(path_outline);
-                                    pi.boundaries = fullBoundaries;
-                                    List<PlannerPoint> newList = Planner.createPlannerList(pi, startPoints, goalPoints);
-                                    sp.setPlannerList(newList);
-                                }
-                            }
-                            List<PlannerPoint> newControlPoints = Planner.planWithPlannerList(pi, sp.getPlannerList());
-                            if (null != newControlPoints && newControlPoints.size() > 0) {
-                                path.setPrePostPathDist(segStartLength);
-                                path.setControlPoints(newControlPoints);
+                if (null == plan_thread) {
+                    plan_thread = new Thread(
+                            new Runnable() {
+                                @Override
+                                public void run() {
+                                    try {
+                                        while (!Thread.currentThread().isInterrupted()) {
+                                            planning = false;
+                                            PlanningArgs pa = planQueue.take();
+                                            planning = true;
+                                            final boolean use_exclusive_paths = pa.use_exclusive_paths;
+                                            final List<PlannedPath> newPlannedPaths = pa.newPlannedPaths;
+                                            for (int i = 0; i < newPlannedPaths.size(); i++) {
+                                                if (Thread.currentThread().isInterrupted()) {
+                                                    return;
+                                                }
+                                                PlannedPath path = newPlannedPaths.get(i);
+                                                CarrierState sp = path.getStartPoint();
+                                                CarrierState gp = path.getGoalPoint();
+                                                PlannerInput pi = path.getPlannerInput();
+                                                pi.start = sp;
+                                                pi.goal = gp;
+                                                if (use_exclusive_paths && !ignoreBoundaries) {
+                                                    List<Boundary> path_outline
+                                                    = path.getPlanOutLine();
+                                                    if (path_outline != null) {
+                                                        fullBoundaries.addAll(path_outline);
+                                                        pi.boundaries = fullBoundaries;
+                                                        List<PlannerPoint> newList = Planner.createPlannerList(pi, startPoints, goalPoints, waypoints);
+                                                        sp.setPlannerList(newList);
+                                                    }
+                                                }
+                                                List<PlannerPoint> newControlPoints = Planner.planWithPlannerList(pi, sp.getPlannerList());
+                                                if (null != newControlPoints && newControlPoints.size() > 0) {
+                                                    path.setPrePostPathDist(segStartLength);
+                                                    path.setControlPoints(newControlPoints);
 //                            if (!path.checkOutlines(pi.boundaries, pi.obstacles)) {
 //                                if (this.pathUncertainty < this.maxPathUncertainty) {
 //                                    this.setPathUncertainty(pathUncertainty + this.vehicleWidth * 0.05);
@@ -770,29 +1014,50 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
 //                                    return false;
 //                                }
 //                            }
-                                if (use_exclusive_paths && null != path.getOutlines()) {
-                                    for (Line2Dd l : path.getOutlines()) {
-                                        fullBoundaries.add(new Boundary(l));
+                                                    if (use_exclusive_paths && null != path.getOutlines()) {
+                                                        for (Line2Dd l : path.getOutlines()) {
+                                                            fullBoundaries.add(new Boundary(l));
+                                                        }
+                                                    }
+                                                }
+                                                newPlannedPaths.set(i, path);
+                                            }
+                                            planning = false;
+                                            try {
+                                                java.awt.EventQueue.invokeAndWait(new Runnable() {
+                                                    @Override
+                                                    public void run() {
+                                                        setPlannedPaths(newPlannedPaths);
+                                                        repaint();
+                                                    }
+                                                });
+                                            } catch (InterruptedException interruptedException) {
+                                            } catch (InvocationTargetException invocationTargetException) {
+                                            }
+
+                                        }
+                                    } catch (InterruptedException interruptedException) {
+                                        //interruptedException.printStackTrace();
                                     }
+                                    planning = false;
                                 }
-                            }
-                            newPlannedPaths.set(i, path);
-                        }
-                        java.awt.EventQueue.invokeLater(new Runnable() {
-                            @Override
-                            public void run() {
-                                plannedPaths = newPlannedPaths;
-                                plan_thread = null;
-                                repaint();
-                            }
-                        });
+                            }, "planThread");
+                    plan_thread.start();
+                }
+                try {
+                    if (newPlannedPaths.size() > 0) {
+                        planQueue.add(new PlanningArgs(newPlannedPaths, use_exclusive_paths));
                     }
-                });
-                plan_thread.start();
+                } catch (Exception e) {
+                }
             }
         } catch (Exception exception) {
-            exception.printStackTrace();
-            JOptionPane.showMessageDialog(this, "Planner Exception: " + exception.getLocalizedMessage());
+            if (!showing_planner_msg) {
+                showing_planner_msg = true;
+                exception.printStackTrace();
+                JOptionPane.showMessageDialog(this, "Planner Exception: " + exception.getLocalizedMessage());
+                showing_planner_msg = false;
+            }
         }
         return true;
     }
@@ -910,6 +1175,11 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                 cs.setReverse(reverse);
             }
         }
+        if (null != this.waypoints) {
+            for (CarrierState cs : this.waypoints) {
+                cs.setReverse(reverse);
+            }
+        }
         this.decrementDelayReplanCount();
         if (this.replanOnAllChanges) {
             this.replan();
@@ -958,7 +1228,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
     double xmax = 1000f;
     double ymin = 0f;
     double ymax = 1000f;
-    double zoomScale = 3f;
+    double zoomScale = 1f;
 
     public double getZoomScale() {
         return zoomScale;
@@ -993,7 +1263,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         this.repaint();
     }
 
-    private Rectangle2D.Double checkPtRect(Point2D pt, Rectangle2D.Double rect) {
+    private Rectangle2Dd checkPtRect(Point2D pt, Rectangle2Dd rect) {
         if (null == pt) {
             return rect;
         }
@@ -1016,8 +1286,41 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         return rect;
     }
 
-    public Rectangle2D.Double getBoundingRect() {
-        Rectangle2D.Double rect = new Rectangle.Double();
+    private Rectangle2Dd getBoundingRectPointList(Rectangle2Dd rect,
+            List<? extends CarrierState> list) {
+        if (null != list) {
+            for (CarrierState sp : list) {
+                rect = checkPtRect(sp, rect);
+                if (null != sp.getShape()) {
+                    Rectangle2D rectSp = sp.getShape().getBounds2D();
+                    AffineTransform at = sp.getAffineTransform();
+                    if (at != null) {
+                        rect = checkPtRect(new Point2Dd(
+                                rectSp.getMinX() + at.getTranslateX(),
+                                rectSp.getMinY() + at.getTranslateY()),
+                                rect);
+                        rect = checkPtRect(new Point2Dd(
+                                rectSp.getMaxX() + at.getTranslateX(),
+                                rectSp.getMaxY() + at.getTranslateY()),
+                                rect);
+                    } else {
+                        rect = checkPtRect(new Point2Dd(
+                                rectSp.getMinX(),
+                                rectSp.getMinY()),
+                                rect);
+                        rect = checkPtRect(new Point2Dd(
+                                rectSp.getMaxX(),
+                                rectSp.getMaxY()),
+                                rect);
+                    }
+                }
+            }
+        }
+        return rect;
+    }
+
+    public Rectangle2Dd getBoundingRect() {
+        Rectangle2Dd rect = new Rectangle2Dd();
         rect.x = Double.POSITIVE_INFINITY;
         rect.y = Double.POSITIVE_INFINITY;
         rect.width = 0;
@@ -1051,40 +1354,9 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                 }
             }
         }
-        if (null != this.startPoints) {
-            for (CarrierState sp : this.startPoints) {
-                rect = checkPtRect(sp, rect);
-                if (null != sp.getShape()) {
-                    Rectangle2D rectSp = sp.getShape().getBounds2D();
-                    AffineTransform at = sp.getAffineTransform();
-                    double hwmax = 0;
-                    if (at != null) {
-                        rect = checkPtRect(new Point2Dd(
-                                rectSp.getMinX() + at.getTranslateX() + hwmax,
-                                rectSp.getMinY() + at.getTranslateY() + hwmax),
-                                rect);
-                        rect = checkPtRect(new Point2Dd(
-                                rectSp.getMaxX() + at.getTranslateX() - hwmax,
-                                rectSp.getMaxY() + at.getTranslateY() - hwmax),
-                                rect);
-                    } else {
-                        rect = checkPtRect(new Point2Dd(
-                                rectSp.getMinX() + hwmax,
-                                rectSp.getMinY() + hwmax),
-                                rect);
-                        rect = checkPtRect(new Point2Dd(
-                                rectSp.getMaxX() - hwmax,
-                                rectSp.getMaxY() - hwmax),
-                                rect);
-                    }
-                }
-            }
-        }
-        if (null != this.goalPoints) {
-            for (CarrierState gp : this.goalPoints) {
-                rect = checkPtRect(gp, rect);
-            }
-        }
+        rect = getBoundingRectPointList(rect, this.startPoints);
+        rect = getBoundingRectPointList(rect, this.waypoints);
+        rect = getBoundingRectPointList(rect, this.goalPoints);
         if (null != this.plannedPaths) {
             for (PlannedPath path : this.plannedPaths) {
                 List<PlannerPoint> ctlPts = path.getControlPoints();
@@ -1244,6 +1516,15 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                 }
             }
         }
+        if (null != this.waypoints) {
+            for (int i = 0; i < this.waypoints.size(); i++) {
+                CarrierState wp = this.waypoints.get(i);
+                if (wp.selected) {
+                    this.waypoints.remove(i);
+                    i--;
+                }
+            }
+        }
         if (null != boundaries) {
             LinkedList<Boundary> blist = new LinkedList<Boundary>(this.boundaries);
             for (int i = 0; i < blist.size(); i++) {
@@ -1272,6 +1553,10 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
             for (int i = 0; i < this.startPoints.size(); i++) {
                 CarrierState sp = this.startPoints.get(i);
                 if (sp.equals(o)) {
+                    CarrierState gp = sp.getGoal();
+                    if (null != gp && gp.getStart() == o) {
+                        gp.setStart(null);
+                    }
                     this.startPoints.remove(i);
                     i--;
                 }
@@ -1281,7 +1566,28 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
             for (int i = 0; i < this.goalPoints.size(); i++) {
                 CarrierState gp = this.goalPoints.get(i);
                 if (gp.equals(o)) {
+                    CarrierState sp = gp.getStart();
+                    if (null != sp && sp.getGoal() == o) {
+                        sp.setGoal(null);
+                    }
                     this.goalPoints.remove(i);
+                    i--;
+                }
+            }
+        }
+        if (null != this.waypoints) {
+            for (int i = 0; i < this.waypoints.size(); i++) {
+                CarrierState wp = this.waypoints.get(i);
+                if (wp.equals(o)) {
+                    CarrierState gp = wp.getGoal();
+                    if (null != gp && gp.getStart() == o) {
+                        gp.setStart(null);
+                    }
+                    CarrierState sp = wp.getStart();
+                    if (null != sp && sp.getGoal() == o) {
+                        sp.setGoal(null);
+                    }
+                    this.waypoints.remove(i);
                     i--;
                 }
             }
@@ -1394,21 +1700,22 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
     }
 
     private void paintPlannerPointTestLines(Graphics2D g2d, PlannerPoint pp) {
-        if (null != pp.testedInLinesMap) {
-            for (PlannerPoint source_pp : pp.testedInLinesMap.keySet()) {
-                if (source_pp.selected) {
-                    List<Line2Dd> testedInLines = pp.testedInLinesMap.get(source_pp);
-                    if (null != testedInLines) {
-                        for (Line2D l : testedInLines) {
-                            g2d.setColor(Color.MAGENTA);
-                            g2d.draw(l);
+        try {
+            if (null != pp.testedInLinesMap) {
+                for (PlannerPoint source_pp : pp.testedInLinesMap.keySet()) {
+                    if (source_pp.selected) {
+                        List<Line2Dd> testedInLines = pp.testedInLinesMap.get(source_pp);
+                        if (null != testedInLines) {
+                            for (Line2D l : testedInLines) {
+                                g2d.setColor(Color.MAGENTA);
+                                g2d.draw(l);
+                            }
                         }
                     }
                 }
             }
-        }
-        if (null != pp.testedOutLinesMap) {
-            try {
+            if (null != pp.testedOutLinesMap) {
+
                 for (PlannerPoint dest_pp : pp.testedOutLinesMap.keySet()) {
                     if (dest_pp.selected) {
                         List<Line2Dd> testedOutLines = pp.testedOutLinesMap.get(dest_pp);
@@ -1420,8 +1727,9 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                         }
                     }
                 }
-            } catch (ConcurrentModificationException cme) {
+
             }
+        } catch (ConcurrentModificationException cme) {
         }
     }
     private double startingAngle = 90.0;
@@ -1481,7 +1789,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
     public void setPlanningHorizon(double planningHorizon) {
         this.planningHorizon = planningHorizon;
     }
-    private boolean replanOnAllChanges = false;
+    private boolean replanOnAllChanges = true;
 
     /**
      * Get the value of replanOnAllChanges
@@ -1506,7 +1814,8 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
             return;
         }
         try {
-            for (PlannerPoint pp : plannerList) {
+            for (int i = 0; null != plannerList && i < plannerList.size(); i++) {
+                PlannerPoint pp = plannerList.get(i);
                 g2d.setColor(new Color(200, 200, 200));
                 if (pp.neighbors == null || pp.neighbors.size() == 0) {
                     if (pp.selected) {
@@ -1522,8 +1831,8 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                 g2d.setColor(new Color(200, 200, 200));
                 try {
                     if (null != pp.failed_neighbors) {
-                        for (int i = 0; i < pp.failed_neighbors.size(); i++) {
-                            PlannerPoint failed_n = pp.failed_neighbors.get(i);
+                        for (int j = 0; j < pp.failed_neighbors.size(); j++) {
+                            PlannerPoint failed_n = pp.failed_neighbors.get(j);
                             g2d.draw(new Line2Dd(pp, failed_n));
                         }
                     }
@@ -1533,8 +1842,8 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                 g2d.setColor(Color.BLACK);
                 try {
                     if (null != pp.neighbors) {
-                        for (int i = 0; i < pp.neighbors.size(); i++) {
-                            PlannerPoint n = pp.neighbors.get(i);
+                        for (int j = 0; j < pp.neighbors.size(); j++) {
+                            PlannerPoint n = pp.neighbors.get(j);
                             g2d.draw(new Line2Dd(pp, n));
                         }
                     }
@@ -1578,7 +1887,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
             g2d.draw(_controlPath);
         }
     }
-    private boolean showCenterCurve = false;
+    private boolean showCenterCurve = true;
 
     /**
      * Get the value of showCenterCurve
@@ -1674,7 +1983,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         this.connectedToVehicle = connectedToVehicle;
     }
 
-    private void paintStart(Graphics2D g2d, CarrierState sp, Shape ss, Shape sl) {
+    private void paintStart(Graphics2D g2d, CarrierState sp, Shape ss, Shape sl, Shape arrow) {
         AffineTransform orig_at = g2d.getTransform();
         if (null != ss) {
             if (!sp.isColliding()) {
@@ -1692,9 +2001,14 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
             g2d.setTransform(orig_at);
         }
         g2d.setColor(new Color(0f, 0f, 0f, 0.5f));
-        drawString(g2d, "S", sp.x - 5f, sp.y + 5f);
+        drawString(g2d, "Start",
+                sp.x,
+                sp.y);
         if (null != sl) {
             g2d.draw(sl);
+        }
+        if (null != arrow) {
+            g2d.fill(arrow);
         }
         if (sp.selected) {
             g2d.setColor(Color.GREEN);
@@ -1720,59 +2034,21 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         }
     }
 
-    public void checkCollisions() {
-        if (null != this.startPoints) {
-            for (CarrierState cs : this.startPoints) {
+    private void checkCollistionsPointList(List<? extends CarrierState> list) {
+        if (null != list) {
+            for (CarrierState cs : list) {
                 cs.setColliding(false);
             }
             if (null != this.obstacles) {
                 for (Obstacle obs : this.obstacles) {
-                    for (CarrierState cs : this.startPoints) {
+                    for (CarrierState cs : list) {
                         cs.checkObstacle(obs);
                     }
                 }
             }
             if (null != this.boundaries) {
                 for (Boundary b : this.boundaries) {
-                    for (CarrierState cs : this.startPoints) {
-                        cs.checkBoundary(b);
-                    }
-                }
-            }
-        }
-        if (null != this.goalPoints) {
-            for (CarrierState cs : this.goalPoints) {
-                cs.setColliding(false);
-            }
-            if (null != this.obstacles) {
-                for (Obstacle obs : this.obstacles) {
-                    for (CarrierState cs : this.goalPoints) {
-                        cs.checkObstacle(obs);
-                    }
-                }
-            }
-            if (null != this.boundaries) {
-                for (Boundary b : this.boundaries) {
-                    for (CarrierState cs : this.goalPoints) {
-                        cs.checkBoundary(b);
-                    }
-                }
-            }
-        }
-        if (null != this.carriers) {
-            for (CarrierState cs : this.carriers) {
-                cs.setColliding(false);
-            }
-            if (null != this.obstacles) {
-                for (Obstacle obs : this.obstacles) {
-                    for (CarrierState cs : this.carriers) {
-                        cs.checkObstacle(obs);
-                    }
-                }
-            }
-            if (null != this.boundaries) {
-                for (Boundary b : this.boundaries) {
-                    for (CarrierState cs : this.carriers) {
+                    for (CarrierState cs : list) {
                         cs.checkBoundary(b);
                     }
                 }
@@ -1780,7 +2056,14 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         }
     }
 
-    private void paintGoal(Graphics2D g2d, CarrierState gp, Shape gs, Shape gl) {
+    public void checkCollisions() {
+        checkCollistionsPointList(this.startPoints);
+        checkCollistionsPointList(this.carriers);
+        checkCollistionsPointList(this.goalPoints);
+        checkCollistionsPointList(this.waypoints);
+    }
+
+    private void paintGoal(Graphics2D g2d, CarrierState gp, Shape gs, Shape gl, Shape arrow) {
         AffineTransform orig_at = g2d.getTransform();
         if (null != gs) {
             if (!gp.isColliding()) {
@@ -1798,9 +2081,12 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
             g2d.setTransform(orig_at);
         }
         g2d.setColor(new Color(1f, 1f, 1f, 0.5f));
-        drawString(g2d, "G", gp.x - 5f, gp.y + 5f);
+        drawString(g2d, "Goal", gp.x, gp.y);
         if (null != gl) {
             g2d.draw(gl);
+        }
+        if (null != arrow) {
+            g2d.fill(arrow);
         }
         if (gp.selected) {
             g2d.setColor(Color.GREEN);
@@ -1808,6 +2094,44 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                 AffineTransform full_at = new AffineTransform();
                 full_at.concatenate(orig_at);
                 full_at.concatenate(gp.getAffineTransform());
+                g2d.setTransform(full_at);
+            }
+            g2d.draw(gs);
+            g2d.setTransform(orig_at);
+        }
+    }
+
+    private void paintWaypoint(Graphics2D g2d, CarrierState wp, Shape gs, Shape gl, Shape arrow) {
+        AffineTransform orig_at = g2d.getTransform();
+        if (null != gs) {
+            if (!wp.isColliding()) {
+                g2d.setColor(new Color(0.1f, 0.1f, 0.1f, 0.4f));
+            } else {
+                g2d.setColor(new Color(.9f, 0f, 0f, 0.4f));
+            }
+            if (wp.getAffineTransform() != null) {
+                AffineTransform full_at = new AffineTransform();
+                full_at.concatenate(orig_at);
+                full_at.concatenate(wp.getAffineTransform());
+                g2d.setTransform(full_at);
+            }
+            g2d.fill(gs);
+            g2d.setTransform(orig_at);
+        }
+        g2d.setColor(new Color(1f, 1f, 1f, 0.5f));
+        drawString(g2d, "Waypoint", wp.x, wp.y);
+        if (null != gl) {
+            g2d.draw(gl);
+        }
+        if (null != arrow) {
+            g2d.fill(arrow);
+        }
+        if (wp.selected) {
+            g2d.setColor(Color.GREEN);
+            if (wp.getAffineTransform() != null) {
+                AffineTransform full_at = new AffineTransform();
+                full_at.concatenate(orig_at);
+                full_at.concatenate(wp.getAffineTransform());
                 g2d.setTransform(full_at);
             }
             g2d.draw(gs);
@@ -1861,7 +2185,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         g2d.setColor(Color.BLACK);
         for (int i = 0; i < _controlPoints.size(); i++) {
             Point2Dd pt = _controlPoints.get(i);
-            g2d.fill(new Rectangle2D.Double(pt.x - 1, pt.y - 1, 2, 2));
+            g2d.fill(new Rectangle2Dd(pt.x - 1, pt.y - 1, 2, 2));
             drawString(g2d, Integer.toString(i), pt.x - 5f, pt.y - 5f);
         }
     }
@@ -1870,7 +2194,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         g2d.setColor(Color.RED);
         for (Boundary b : this.boundaries) {
             if (Double.isNaN(b.x2) || Double.isNaN(b.y2)) {
-                g2d.draw(new Rectangle2D.Double(b.x1 - 1, b.y1 - 1, 3f, 3f));
+                g2d.draw(new Rectangle2Dd(b.x1 - 1, b.y1 - 1, 3f, 3f));
             }
             if (b.P1Selected && b.P2Selected) {
                 g2d.setColor(Color.green);
@@ -1890,10 +2214,10 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                 g2d.setTransform(at);
             } else if (b.P1Selected) {
                 g2d.setColor(Color.green);
-                g2d.draw(new Rectangle2D.Double(b.x1 - 1, b.y1 - 1, 3, 3));
+                g2d.draw(new Rectangle2Dd(b.x1 - 1, b.y1 - 1, 3, 3));
             } else if (b.P2Selected) {
                 g2d.setColor(Color.green);
-                g2d.draw(new Rectangle2D.Double(b.x2 - 1, b.y2 - 1, 3, 3));
+                g2d.draw(new Rectangle2Dd(b.x2 - 1, b.y2 - 1, 3, 3));
             }
             g2d.setColor(Color.RED);
             g2d.draw(b);
@@ -1907,13 +2231,16 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
      * @param delay_replan new value of delay_replan
      */
     public void incrementDelayReplanCount() {
-        try {
-            if (null != this.plan_thread) {
-                this.plan_thread.interrupt();
-                this.plan_thread.join();
-                this.plan_thread = null;
-            }
-        } catch (InterruptedException interruptedException) {
+//        try {
+//            if (null != this.plan_thread) {
+//                this.plan_thread.interrupt();
+//                this.plan_thread.join();
+//                this.plan_thread = null;
+//            }
+//        } catch (InterruptedException interruptedException) {
+//        }
+        if (null != planQueue && !planQueue.isEmpty()) {
+            planQueue.remove(0);
         }
         this.delay_replan_count++;
     }
@@ -1924,14 +2251,14 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
      * @param delay_replan new value of delay_replan
      */
     public void decrementDelayReplanCount() {
-        try {
-            if (null != this.plan_thread) {
-                this.plan_thread.interrupt();
-                this.plan_thread.join();
-                this.plan_thread = null;
-            }
-        } catch (InterruptedException interruptedException) {
-        }
+//        try {
+//            if (null != this.plan_thread) {
+//                this.plan_thread.interrupt();
+//                this.plan_thread.join();
+//                this.plan_thread = null;
+//            }
+//        } catch (InterruptedException interruptedException) {
+//        }
         if (this.delay_replan_count > 0) {
             this.delay_replan_count--;
         }
@@ -2004,7 +2331,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         }
         if (null != this.startPoints) {
             for (CarrierState sp : this.startPoints) {
-                this.paintStart(g2d, sp, sp.getShape(), sp.getLine());
+                this.paintStart(g2d, sp, sp.getShape(), sp.getLine(), sp.getArrow());
                 if (sp.selected) {
                     PlannedPath path = sp.getPath();
                     if (null != sp.getPlannerList() && this.showPlanning) {
@@ -2021,7 +2348,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                 if (null == gp) {
                     continue;
                 }
-                this.paintGoal(g2d, gp, gp.getShape(), gp.getLine());
+                this.paintGoal(g2d, gp, gp.getShape(), gp.getLine(), gp.getArrow());
                 if (gp.selected) {
                     PlannedPath path = gp.getPath();
                     if (null != gp.getPlannerList() && this.showPlanning) {
@@ -2032,6 +2359,43 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                     }
                 }
             }
+        }
+        if (null != this.goalPoints) {
+            for (CarrierState gp : this.goalPoints) {
+                if (null == gp) {
+                    continue;
+                }
+                this.paintGoal(g2d, gp, gp.getShape(), gp.getLine(), gp.getArrow());
+                if (gp.selected) {
+                    PlannedPath path = gp.getPath();
+                    if (null != gp.getPlannerList() && this.showPlanning) {
+                        this.paintBackgroundPlannerInfo(g2d, gp.getPlannerList());
+                        if (null != gp.getPath()) {
+                            this.paintBackgroundPlannerInfo(g2d, gp.getPath().getControlPoints());
+                        }
+                    }
+                }
+            }
+        }
+        if (null != this.waypoints) {
+            for (CarrierState wp : this.waypoints) {
+                if (null == wp) {
+                    continue;
+                }
+                this.paintWaypoint(g2d, wp, wp.getShape(), wp.getLine(), wp.getArrow());
+                if (wp.selected) {
+                    PlannedPath path = wp.getPath();
+                    if (null != wp.getPlannerList() && this.showPlanning) {
+                        this.paintBackgroundPlannerInfo(g2d, wp.getPlannerList());
+                        if (null != wp.getPath()) {
+                            this.paintBackgroundPlannerInfo(g2d, wp.getPath().getControlPoints());
+                        }
+                    }
+                }
+            }
+        }
+        if (null != this.tmpGoal) {
+            this.paintGoal(g2d, tmpGoal, tmpGoal.getShape(), tmpGoal.getLine(), tmpGoal.getArrow());
         }
         if (null != this.plannedPaths) {
             for (PlannedPath path : this.plannedPaths) {
@@ -2099,7 +2463,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         }
         if (null != this.startPoints) {
             for (CarrierState sp : this.startPoints) {
-                this.paintStart(g2d, sp, sp.getShape(), sp.getLine());
+                this.paintStart(g2d, sp, sp.getShape(), sp.getLine(), sp.getArrow());
                 if (sp.selected) {
                     PlannedPath path = sp.getPath();
                     if (null != sp.getPlannerList() && this.showPlanning) {
@@ -2122,6 +2486,22 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                         this.paintForegroundPlannerInfo(g2d, gp.getPlannerList());
                         if (null != gp.getPath()) {
                             this.paintForegroundPlannerInfo(g2d, gp.getPath().getControlPoints());
+                        }
+                    }
+                }
+            }
+        }
+        if (null != this.waypoints) {
+            for (CarrierState wp : this.waypoints) {
+                if (null == wp) {
+                    continue;
+                }
+                if (wp.selected) {
+                    PlannedPath path = wp.getPath();
+                    if (null != wp.getPlannerList() && this.showPlanning) {
+                        this.paintForegroundPlannerInfo(g2d, wp.getPlannerList());
+                        if (null != wp.getPath()) {
+                            this.paintForegroundPlannerInfo(g2d, wp.getPath().getControlPoints());
                         }
                     }
                 }
@@ -2167,8 +2547,13 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         }
         if (null != this.select_rect) {
             g2d.setColor(Color.BLACK);
-            System.out.println("select_rect = " + select_rect);
+//            System.out.println("select_rect = " + select_rect);
             g2d.draw(this.select_rect);
+        }
+        if (null != this.planningAreaRect) {
+            g2d.setColor(Color.MAGENTA);
+//            System.out.println("select_rect = " + select_rect);
+            g2d.draw(this.planningAreaRect);
         }
     }
 
@@ -2184,7 +2569,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         this.setStartPoints(null);
         this.setGoalPoints(null);
         this.setTempObstacles(null);
-        this.replan();
+        this.setPlannedPaths(null);
         this.repaint();
     }
 
@@ -2213,6 +2598,11 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         if (null != this.goalPoints) {
             for (CarrierState gp : this.goalPoints) {
                 gp.selected = false;
+            }
+        }
+        if (null != this.waypoints) {
+            for (CarrierState wp : this.waypoints) {
+                wp.selected = false;
             }
         }
         if (null != this.selectedObjects) {
@@ -2313,6 +2703,35 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                     }
                 }
                 PlannedPath plannedPath = gp.getPath();
+                if (null != plannedPath) {
+                    ppl = plannedPath.getControlPoints();
+                    if (null != ppl) {
+                        for (PlannerPoint pp : ppl) {
+                            if (pp.distance(pt) < this.plannerPointDisplaySize / 2 + fuzz) {
+                                pp.selected = true;
+                                addSelectedObject(pp);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        if (null != this.waypoints) {
+            for (CarrierState wp : this.waypoints) {
+                if (wp.contains(pt)) {
+                    wp.selected = true;
+                    addSelectedObject(wp);
+                }
+                List<PlannerPoint> ppl = wp.getPlannerList();
+                if (null != ppl) {
+                    for (PlannerPoint pp : ppl) {
+                        if (pp.distance(pt) < this.plannerPointDisplaySize / 2 + fuzz) {
+                            pp.selected = true;
+                            addSelectedObject(pp);
+                        }
+                    }
+                }
+                PlannedPath plannedPath = wp.getPath();
                 if (null != plannedPath) {
                     ppl = plannedPath.getControlPoints();
                     if (null != ppl) {
@@ -2434,33 +2853,89 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                 }
             }
         }
+        if (null != this.waypoints) {
+            for (CarrierState wp : this.waypoints) {
+                if (wp.contains(pt)) {
+                    l.add(wp);
+                }
+            }
+        }
         return l;
     }
     private Point2Dd startDragPt;
     private boolean drag_moves_selection = false;
-    private Rectangle2D.Double select_rect = null;
+    private Rectangle2Dd select_rect = null;
 
     public void updatePlannerInfo(CarrierState startPoint,
             CarrierState goalPoint,
             List<PlannerPoint> _plannerPoints,
             List<PlannerPoint> _cntrlPoints) {
         this.incrementDelayReplanCount();
-        if (null == startPoint) {
-            this.setStartPoints(null);
-        } else {
-            this.setStartPoints(new LinkedList<CarrierState>(Arrays.asList(startPoint)));
+        if (null != startPoint) {
+            startPoint.setGoal(goalPoint);
+            if (null != this.startPoints && this.startPoints.size() == 1
+                    && startPoint == this.startPoints.get(0)) {
+                // skip it this startPoint already  is the list
+            } else if (null == this.startPoints || this.startPoints.size() < 2) {
+                this.setStartPoints(new LinkedList<CarrierState>(Arrays.asList(startPoint)));
+            } else {
+                if (!startPoints.contains(startPoint)) {
+                    CarrierState closestPoint = null;
+                    double min_dist = Double.POSITIVE_INFINITY;
+                    for (CarrierState sp : this.startPoints) {
+                        double dist = sp.distance(startPoint) + Planner.chord(startPoint.unit(), sp.unit(),
+                                minTurnRadius + plannerResolution);
+                        if (dist < min_dist) {
+                            min_dist = dist;
+                            closestPoint = sp;
+                        }
+                    }
+                    if (null != closestPoint) {
+                        this.startPoints.remove(closestPoint);
+                    }
+                    this.startPoints.add(startPoint);
+                }
+            }
         }
-        if (null == goalPoint) {
-            this.setGoalPoints(null);
-        } else {
-            this.setGoalPoints(new LinkedList<CarrierState>(Arrays.asList(goalPoint)));
+        if (null != goalPoint) {
+            goalPoint.setStart(startPoint);
+            if (null != this.goalPoints && this.goalPoints.size() == 1
+                    && goalPoint == this.goalPoints.get(0)) {
+                // skip it
+            } else if (this.goalPoints == null || this.goalPoints.size() < 2) {
+                this.setGoalPoints(new LinkedList<CarrierState>(Arrays.asList(goalPoint)));
+            } else {
+                if (!goalPoints.contains(goalPoint)) {
+                    CarrierState closestPoint = null;
+                    double min_dist = Double.POSITIVE_INFINITY;
+                    for (CarrierState gp : this.goalPoints) {
+                        double dist = gp.distance(goalPoint) + Planner.chord(goalPoint.unit(), gp.unit(),
+                                minTurnRadius + plannerResolution);
+                        if (dist < min_dist) {
+                            min_dist = dist;
+                            closestPoint = gp;
+                        }
+                    }
+                    if (null != closestPoint) {
+                        this.goalPoints.remove(closestPoint);
+                    }
+                    this.goalPoints.add(goalPoint);
+                }
+            }
         }
-        PlannedPath path = new PlannedPath(this);
-        path.setStartPoint(startPoint);
-        path.setGoalPoint(goalPoint);
-        path.setPrePostPathDist(segStartLength);
-        path.setControlPoints(_cntrlPoints);
-        this.setPlannedPaths(Arrays.asList(path));
+        if (null != _cntrlPoints) {
+            if (null == startPoint
+                    || null == startPoint.getPath()
+                    || null == startPoint.getPath().getControlPoints()
+                    || _cntrlPoints != startPoint.getPath().getControlPoints()) {
+                PlannedPath path = new PlannedPath(this);
+                path.setStartPoint(startPoint);
+                path.setGoalPoint(goalPoint);
+                path.setPrePostPathDist(segStartLength);
+                path.setControlPoints(_cntrlPoints);
+                this.setPlannedPaths(Arrays.asList(path));
+            }
+        }
         this.decrementDelayReplanCount();
         this.repaint();
     }
@@ -2606,7 +3081,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                         fld.set(objectToModify, null);
                     }
                 }
-                String setMethodName = "set" + var;
+                String setMethodName = "set" + Character.toUpperCase(var.charAt(0)) + var.substring(1);
                 Method set_method = methodMap.get(setMethodName);
                 if (null != set_method) {
                     Class paramtypes[] = set_method.getParameterTypes();
@@ -2640,7 +3115,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                         try {
                             if (val.length() < 1 || val.compareTo("null") == 0) {
                                 set_method.invoke(objectToModify, new Object[]{null});
-                            } else {
+                            } else if (paramtypes[0] == String.class) {
                                 set_method.invoke(objectToModify, val);
                             }
                         } catch (Exception e) {
@@ -2691,22 +3166,54 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                 final CarrierState cs = (CarrierState) o;
                 if (cs.getType() != CarrierStateTypeEnum.GOAL) {
                     List<CarrierState> goalPoints = this.getGoalPoints();
-                    if (null != goalPoints) {
+                    if (null != goalPoints || null != waypoints) {
                         JMenu setGoalMenu = new JMenu("Set Goal");
-                        for (final CarrierState gp : goalPoints) {
-                            JMenuItem mi = new JMenuItem(gp.toString());
-                            mi.addActionListener(new ActionListener() {
-                                @Override
-                                public void actionPerformed(ActionEvent e) {
-                                    cs.setGoal(gp);
-                                    popup.setVisible(false);
-                                    replan();
-                                    repaint();
+                        if (null != goalPoints) {
+                            for (final CarrierState gp : goalPoints) {
+                                JMenuItem mi = new JMenuItem(gp.toString());
+                                mi.addActionListener(new ActionListener() {
+                                    @Override
+                                    public void actionPerformed(ActionEvent e) {
+                                        cs.setGoal(gp);
+                                        popup.setVisible(false);
+                                        replan();
+                                        repaint();
+                                    }
+                                });
+                                setGoalMenu.add(mi);
+                            }
+                        }
+                        if (null != waypoints) {
+                            for (final CarrierState wp : waypoints) {
+                                if (wp == cs) {
+                                    continue;
                                 }
-                            });
-                            setGoalMenu.add(mi);
+                                JMenuItem mi = new JMenuItem(wp.toString());
+                                mi.addActionListener(new ActionListener() {
+                                    @Override
+                                    public void actionPerformed(ActionEvent e) {
+                                        cs.setGoal(wp);
+                                        popup.setVisible(false);
+                                        replan();
+                                        repaint();
+                                    }
+                                });
+                                setGoalMenu.add(mi);
+                            }
                         }
                         submenu.add(setGoalMenu);
+                    }
+                    if (null != cs.getGoal()) {
+                        JMenuItem mi = new JMenuItem("Clear Goal");
+                        mi.addActionListener(new ActionListener() {
+                            @Override
+                            public void actionPerformed(ActionEvent e) {
+                                cs.setGoal(null);
+                                popup.setVisible(false);
+                                replan();
+                                repaint();
+                            }
+                        });
                     }
                     JMenuItem frontMenuItem = new JMenuItem("Bring to front of exclusive planning list.");
                     frontMenuItem.addActionListener(new ActionListener() {
@@ -2731,6 +3238,10 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                 @Override
                 public void actionPerformed(ActionEvent e) {
                     EditProperties(o);
+                    if (CarrierState.class.isAssignableFrom(o.getClass())) {
+                        final CarrierState cs = (CarrierState) o;
+                        cs.updateShape();
+                    }
                     popup.setVisible(false);
                     replan();
                     repaint();
@@ -2776,7 +3287,8 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
     @Override
     public void mousePressed(MouseEvent e) {
         try {
-            System.out.println("e = " + e);
+            this.clearTmpGoal();
+//            System.out.println("e = " + e);
             if (e.isPopupTrigger()) {
                 showPopup(e);
                 return;
@@ -2804,20 +3316,20 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                     for (CarrierState sp : this.startPoints) {
                         if (sp.contains(pt)) {
                             sp_found = true;
-                            sp.setAngle(new AngleD(Math.atan2(pt.y - sp.y, pt.x - sp.x)));
-                            sp.setLine(new Line2Dd(sp,
-                                    Point2Dd.addPtDistAngle(sp, this.plannerPointDisplaySize / 2.0, sp.getAngle())));
+//                            sp.setAngle(new AngleD(Math.atan2(pt.y - sp.y, pt.x - sp.x)));
+//                            sp.setLine(new Line2Dd(sp,
+//                                    Point2Dd.addPtDistAngle(sp, this.plannerPointDisplaySize / 2.0, sp.getAngle())));
                         }
                     }
                     if (!sp_found) {
                         double sz = this.plannerPointDisplaySize;
                         double angle = Math.toRadians(this.startingAngle);
-                        String angleS = JOptionPane.showInputDialog(this, "Angle (in Degrees)",
-                                String.format("%.0f", this.startingAngle));
-                        if (angleS != null && angleS.length() > 0) {
-                            angle = Math.toRadians(Double.valueOf(angleS));
-                            this.startingAngle = Double.valueOf(angleS);
-                        }
+//                        String angleS = JOptionPane.showInputDialog(this, "Angle (in Degrees)",
+//                                String.format("%.0f", this.startingAngle));
+//                        if (angleS != null && angleS.length() > 0) {
+//                            angle = Math.toRadians(Double.valueOf(angleS));
+//                            this.startingAngle = Double.valueOf(angleS);
+//                        }
                         CarrierState sp = new CarrierState(pt,
                                 new AngleD(angle),
                                 CarrierStateTypeEnum.START,
@@ -2856,22 +3368,22 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                     for (CarrierState gp : this.goalPoints) {
                         if (gp.contains(pt)) {
                             gp_found = true;
-                            gp.setAngle(new AngleD(Math.atan2(pt.y - gp.y,
-                                    pt.x - gp.x)));
-                            gp.setLine(new Line2Dd(gp,
-                                    Point2Dd.addPtDistAngle(gp,
-                                    this.plannerPointDisplaySize / 2.0, gp.getAngle())));
+//                            gp.setAngle(new AngleD(Math.atan2(pt.y - gp.y,
+//                                    pt.x - gp.x)));
+//                            gp.setLine(new Line2Dd(gp,
+//                                    Point2Dd.addPtDistAngle(gp,
+//                                    this.plannerPointDisplaySize / 2.0, gp.getAngle())));
                         }
                     }
                     if (!gp_found) {
                         double sz = this.plannerPointDisplaySize;
                         double angle = Math.toRadians(this.startingAngle);
-                        String angleS = JOptionPane.showInputDialog(this, "Angle (in Degrees)",
-                                String.format("%.0f", this.startingAngle));
-                        if (angleS != null && angleS.length() > 0) {
-                            angle = Math.toRadians(Double.valueOf(angleS));
-                            this.startingAngle = Double.valueOf(angleS);
-                        }
+//                        String angleS = JOptionPane.showInputDialog(this, "Angle (in Degrees)",
+//                                String.format("%.0f", this.startingAngle));
+//                        if (angleS != null && angleS.length() > 0) {
+//                            angle = Math.toRadians(Double.valueOf(angleS));
+//                            this.startingAngle = Double.valueOf(angleS);
+//                        }
                         CarrierState gp = new CarrierState(pt,
                                 new AngleD(angle),
                                 CarrierStateTypeEnum.GOAL,
@@ -2896,6 +3408,100 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                         } catch (UnsupportedOperationException uoe) {
                             this.goalPoints = new LinkedList<>();
                             this.goalPoints.add(gp);
+                        }
+                    }
+                    this.replan();
+                    this.repaint();
+                    break;
+
+                case WAYPOINT:
+//                StartOrGoalPoint oldGoalPoint = this.goalPoint;
+//                if (oldGoalPoint != null && oldGoalPoint.distance(pt) < 10f) {
+//                    double angle =  Math.atan2(pt.y - oldGoalPoint.y, pt.x - oldGoalPoint.x);
+//                    System.out.println("goalPoint.angle = " + oldGoalPoint.angle);
+//                    this.setGoalPoint(new StartOrGoalPoint(oldGoalPoint.x, oldGoalPoint.y, angle));
+//                } else {
+//                    this.setGoalPoint(new StartOrGoalPoint(pt));
+//                }
+                    if (null == this.waypoints) {
+                        this.waypoints = new LinkedList<>();
+                    }
+                    boolean wp_found = false;
+                    for (CarrierState wp : this.waypoints) {
+                        if (wp.contains(pt)) {
+                            wp_found = true;
+//                            wp.setAngle(new AngleD(Math.atan2(pt.y - wp.y,
+//                                    pt.x - wp.x)));
+//                            wp.setLine(new Line2Dd(wp,
+//                                    Point2Dd.addPtDistAngle(wp,
+//                                    this.plannerPointDisplaySize / 2.0, wp.getAngle())));
+                        }
+                    }
+                    if (!wp_found) {
+                        double sz = this.plannerPointDisplaySize;
+                        double angle = Math.toRadians(this.startingAngle);
+//                        String angleS = JOptionPane.showInputDialog(this, "Angle (in Degrees)",
+//                                String.format("%.0f", this.startingAngle));
+//                        if (angleS != null && angleS.length() > 0) {
+//                            angle = Math.toRadians(Double.valueOf(angleS));
+//                            this.startingAngle = Double.valueOf(angleS);
+//                        }
+                        CarrierState wp = new CarrierState(pt,
+                                new AngleD(angle),
+                                CarrierStateTypeEnum.WAYPOINT,
+                                this.plannerPointDisplaySize,
+                                this.vehicleWidth,
+                                this.vehicleFront,
+                                this.vehicleBack);
+                        if (null != this.startPoints) {
+                            for (CarrierState sp : this.startPoints) {
+                                if (sp.getType() == CarrierStateTypeEnum.START
+                                        && sp.getGoal() == null) {
+                                    wp.setStart(sp);
+                                    break;
+                                }
+                            }
+                        }
+                        if (wp.getStart() == null) {
+                            for (CarrierState wp2 : this.waypoints) {
+                                if (wp == wp2) {
+                                    continue;
+                                }
+                                if (wp2.getType() == CarrierStateTypeEnum.WAYPOINT
+                                        && wp2.getGoal() == null) {
+                                    wp.setStart(wp2);
+                                    break;
+                                }
+                            }
+                        }
+                        if (wp.getStart() == null) {
+                            for (CarrierState wp2 : this.waypoints) {
+                                if (wp == wp2) {
+                                    continue;
+                                }
+                                if (wp2.getType() == CarrierStateTypeEnum.WAYPOINT
+                                        && wp2.getStart() == null) {
+                                    wp.setGoal(wp2);
+                                    break;
+                                }
+                            }
+                        }
+                        if (wp.getStart() == null && wp.getGoal() == null) {
+                            if (null != this.goalPoints) {
+                                for (CarrierState gp : this.goalPoints) {
+                                    if (gp.getType() == CarrierStateTypeEnum.GOAL
+                                            && gp.getStart() == null) {
+                                        wp.setGoal(gp);
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        try {
+                            this.waypoints.add(wp);
+                        } catch (UnsupportedOperationException uoe) {
+                            this.waypoints = new LinkedList<>();
+                            this.waypoints.add(wp);
                         }
                     }
                     this.replan();
@@ -2970,7 +3576,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         this.showBackgroundShapes = showBackgroundShapes;
     }
 
-    private void checkPlannerPointListSelections(Rectangle2D.Double rect,
+    private void checkPlannerPointListSelections(Rectangle2Dd rect,
             List<PlannerPoint> ll) {
         int num_selected = 0;
         for (PlannerPoint pp : ll) {
@@ -2984,7 +3590,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         }
     }
 
-    public void SelectByRectangle(Rectangle2D.Double rect) {
+    public void SelectByRectangle(Rectangle2Dd rect) {
         boolean obstacle_selected = false;
 //        if (null != Planner.ll) {
 //            checkPlannerPointListSelections(rect, Planner.ll);
@@ -3066,13 +3672,19 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         }
         this.repaint();
     }
+    private boolean replan_on_mouse_release = false;
 
     @Override
     public void mouseReleased(MouseEvent e) {
-        System.out.println("e = " + e);
+//        System.out.println("e = " + e);
         this.lastDraggedE = null;
+        this.clearTmpGoal();
         if (e.isPopupTrigger()) {
             showPopup(e);
+            if (replan_on_mouse_release) {
+                this.replan();
+                replan_on_mouse_release = false;
+            }
             return;
         }
         if (!this.drag_moves_selection
@@ -3084,6 +3696,10 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
             this.SelectByRectangle(select_rect);
         }
         this.select_rect = null;
+        if (replan_on_mouse_release) {
+            this.replan();
+            replan_on_mouse_release = false;
+        }
         this.repaint();
         // do nothing
     }
@@ -3095,7 +3711,11 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
 
     @Override
     public void mouseExited(MouseEvent e) {
-        // do nothing
+        this.clearTmpGoal();
+        if (null != this.planToTmpGoalTimer) {
+            this.planToTmpGoalTimer.stop();
+            this.planToTmpGoalTimer = null;
+        }
     }
     private boolean ShowGrid;
 
@@ -3169,25 +3789,6 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
             this.replan();
         }
         this.repaint();
-    }
-    private boolean manualGoal;
-
-    /**
-     * Get the value of manualGoal
-     *
-     * @return the value of manualGoal
-     */
-    public boolean isManualGoal() {
-        return manualGoal;
-    }
-
-    /**
-     * Set the value of manualGoal
-     *
-     * @param manualGoal new value of manualGoal
-     */
-    public void setManualGoal(boolean manualGoal) {
-        this.manualGoal = manualGoal;
     }
 
     public void moveSelection(Point2Dd move) throws InterruptedException {
@@ -3286,8 +3887,12 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
     @Override
     public void mouseDragged(MouseEvent e) {
         try {
+            this.clearTmpGoal();
             Point2Dd pt2 = mouseEventToPoint2Dd(e);;
-            if ((e.getModifiersEx() & MouseEvent.BUTTON1_DOWN_MASK) != 0) {
+            if ((e.getModifiersEx() & MouseEvent.BUTTON1_DOWN_MASK) != 0
+                    && (e.getModifiersEx() & MouseEvent.BUTTON2_DOWN_MASK) == 0
+                    && (e.getModifiersEx() & MouseEvent.BUTTON3_DOWN_MASK) == 0
+                    && (e.getModifiersEx() & MouseEvent.ALT_DOWN_MASK) == 0) {
                 switch (drawMode) {
                     case OBSTACLE:
                         Obstacle o = new Obstacle(
@@ -3306,7 +3911,18 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                             this.moveSelection(pt2.diff(this.startDragPt));
                             this.startDragPt = pt2;
                         } else {
-                            this.select_rect = new Rectangle2D.Double(Math.min(pt2.x, this.startDragPt.x), Math.min(pt2.y, this.startDragPt.y),
+                            this.select_rect = new Rectangle2Dd(Math.min(pt2.x, this.startDragPt.x), Math.min(pt2.y, this.startDragPt.y),
+                                    Math.abs(pt2.x - this.startDragPt.x), Math.abs(pt2.y - this.startDragPt.y));
+                        }
+                        this.repaint();
+                        break;
+
+                    case DRAW_PLANNING_RECT:
+                        if (this.drag_moves_selection) {
+                            this.moveSelection(pt2.diff(this.startDragPt));
+                            this.startDragPt = pt2;
+                        } else {
+                            this.planningAreaRect = new Rectangle2Dd(Math.min(pt2.x, this.startDragPt.x), Math.min(pt2.y, this.startDragPt.y),
                                     Math.abs(pt2.x - this.startDragPt.x), Math.abs(pt2.y - this.startDragPt.y));
                         }
                         this.repaint();
@@ -3320,6 +3936,67 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                         }
                         this.lastDraggedE = e;
                         this.repaint();
+
+                    case START:
+                        for (CarrierState sp : this.startPoints) {
+                            if (sp.contains(pt2)) {
+                                sp.setLocation(pt2);
+                                this.repaint();
+                                if (this.replanOnAllChanges) {
+                                    this.replan_on_mouse_release = true;
+                                }
+                                break;
+                            }
+                        }
+                        break;
+
+                    case GOAL:
+                        for (CarrierState gp : this.goalPoints) {
+                            if (gp.contains(pt2)) {
+                                gp.setLocation(pt2);
+                                this.repaint();
+                                if (this.replanOnAllChanges) {
+                                    this.replan_on_mouse_release = true;
+                                }
+                                break;
+                            }
+                        }
+                        break;
+
+                    case WAYPOINT:
+                        for (CarrierState wp : this.waypoints) {
+                            if (wp.contains(pt2)) {
+                                wp.setLocation(pt2);
+                                this.repaint();
+                                if (this.replanOnAllChanges) {
+                                    this.replan_on_mouse_release = true;
+                                }
+                                break;
+                            }
+                        }
+                        break;
+                }
+            } else if (
+                    (e.getModifiersEx() & MouseEvent.BUTTON2_DOWN_MASK) != 0
+                    || (e.getModifiersEx() & MouseEvent.ALT_DOWN_MASK) != 0) {
+                switch (drawMode) {
+                    case START:
+                        this.checkStartPointAngles(e, pt2);
+                        break;
+
+                    case GOAL:
+                        this.checkGoalPointAngles(e, pt2);
+                        break;
+
+                    case WAYPOINT:
+                        this.checkWaypointAngles(e, pt2);
+                        break;
+                        
+                    default:
+                        this.checkStartPointAngles(e, pt2);
+                        this.checkGoalPointAngles(e, pt2);
+                        this.checkWaypointAngles(e, pt2);
+                        break;
                 }
             }
         } catch (Exception exception) {
@@ -3327,9 +4004,146 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         }
     }
 
+    private void checkWaypointAngles(MouseEvent evt, Point2Dd pt2) {
+        if(null != this.waypoints) {
+            return;
+        }
+        for (CarrierState wp : this.waypoints) {
+            if (wp.contains(pt2)) {
+                wp.setAngle(new AngleD(Math.atan2(pt2.y - wp.y, pt2.x - wp.x)));
+                wp.setLine(new Line2Dd(wp,
+                        Point2Dd.addPtDistAngle(wp, this.plannerPointDisplaySize / 2.0, wp.getAngle())));
+                if (this.crab) {
+                    CarrierState sp = wp.getStart();
+                    if (null != sp) {
+                        sp.setAngle(wp.getAngle());
+                        sp.setLine(new Line2Dd(sp,
+                                Point2Dd.addPtDistAngle(sp, this.plannerPointDisplaySize / 2.0, sp.getAngle())));
+                    }
+                    CarrierState gp = wp.getGoal();
+                    if (null != gp) {
+                        gp.setAngle(wp.getAngle());
+                        gp.setLine(new Line2Dd(sp,
+                                Point2Dd.addPtDistAngle(sp, this.plannerPointDisplaySize / 2.0, gp.getAngle())));
+                    }
+                }
+                this.repaint();
+                if (this.replanOnAllChanges) {
+                    this.replan_on_mouse_release = true;
+                }
+                break;
+            }
+        }
+    }
+
+    private void checkStartPointAngles(MouseEvent evt, Point2Dd pt2) {
+        if(null != this.startPoints) {
+            return;
+        }
+        for (CarrierState sp : this.startPoints) {
+            if (sp.contains(pt2)) {
+                sp.setAngle(new AngleD(Math.atan2(pt2.y - sp.y, pt2.x - sp.x)));
+                sp.setLine(new Line2Dd(sp,
+                        Point2Dd.addPtDistAngle(sp, this.plannerPointDisplaySize / 2.0, sp.getAngle())));
+                if (this.crab) {
+                    CarrierState gp = sp.getGoal();
+                    if (null != gp) {
+                        gp.setAngle(sp.getAngle());
+                        gp.setLine(new Line2Dd(sp,
+                                Point2Dd.addPtDistAngle(sp, this.plannerPointDisplaySize / 2.0, gp.getAngle())));
+                    }
+                }
+                this.repaint();
+                if (this.replanOnAllChanges) {
+                    this.replan_on_mouse_release = true;
+                }
+                break;
+            }
+        }
+    }
+
+    private void checkGoalPointAngles(MouseEvent evt, Point2Dd pt2) {
+        if(null != this.goalPoints) {
+            return;
+        }
+        for (CarrierState gp : this.goalPoints) {
+            if (gp.contains(pt2)) {
+                gp.setAngle(new AngleD(Math.atan2(pt2.y - gp.y, pt2.x - gp.x)));
+                gp.setLine(new Line2Dd(gp,
+                        Point2Dd.addPtDistAngle(gp, this.plannerPointDisplaySize / 2.0, gp.getAngle())));
+                if (this.crab) {
+                    CarrierState sp = gp.getStart();
+                    if (null != sp) {
+                        sp.setAngle(gp.getAngle());
+                        sp.setLine(new Line2Dd(sp,
+                                Point2Dd.addPtDistAngle(sp, this.plannerPointDisplaySize / 2.0, sp.getAngle())));
+                    }
+                }
+                this.repaint();
+                if (this.replanOnAllChanges) {
+                    this.replan_on_mouse_release = true;
+                }
+                break;
+            }
+        }
+    }
+
+    CarrierState tmpGoal = null;
+    public boolean planToTmpGoalUpdated = true;
+    javax.swing.Timer planToTmpGoalTimer = null;
+
+    public void updatePlanToTmpGoal() {
+        if (null != tmpGoal
+                && !tmpGoal.isColliding() && this.plan_thread == null && !planToTmpGoalUpdated) {
+            if (this.goalPoints == null || this.goalPoints.size() < 1) {
+                if (null != this.startPoints && this.startPoints.size() > 0) {
+                    for (CarrierState sp : this.startPoints) {
+                        sp.setGoal(tmpGoal);
+                    }
+                    this.replan();
+                }
+            }
+        }
+        planToTmpGoalUpdated = true;
+    }
+
     @Override
     public void mouseMoved(MouseEvent e) {
-        // do nothing
+        this.clearTmpGoal();
+        if (this.drawMode == SplineDrawMode.GOAL) {
+            Point2Dd pt2 = mouseEventToPoint2Dd(e);
+            if (null != tmpGoal) {
+                if (Math.abs(pt2.x - tmpGoal.x) <= Double.MIN_NORMAL
+                        && Math.abs(pt2.y - tmpGoal.y) <= Double.MIN_NORMAL) {
+                    return;
+                }
+            }
+            double angle = Math.toRadians(this.startingAngle);
+            tmpGoal = new CarrierState(pt2,
+                    new AngleD(angle),
+                    CarrierStateTypeEnum.GOAL,
+                    this.plannerPointDisplaySize,
+                    this.vehicleWidth,
+                    this.vehicleFront,
+                    this.vehicleBack);
+            if (null != boundaries) {
+                tmpGoal.checkBoundaries(boundaries);
+            }
+            if (null != obstacles) {
+                tmpGoal.checkObstacles(obstacles);
+            }
+            this.planToTmpGoalUpdated = false;
+            if (null == this.planToTmpGoalTimer) {
+                this.planToTmpGoalTimer = new javax.swing.Timer(500, new ActionListener() {
+                    @Override
+                    public void actionPerformed(ActionEvent ae) {
+                        updatePlanToTmpGoal();
+                    }
+                });
+                this.planToTmpGoalTimer.start();
+            }
+            this.repaint();
+        }
     }
 
     /**
@@ -3369,6 +4183,16 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         }
         if (null != this.startPoints) {
             for (CarrierState cs : this.startPoints) {
+                cs.setFront(this.vehicleFront);
+            }
+        }
+        if (null != this.waypoints) {
+            for (CarrierState cs : this.waypoints) {
+                cs.setFront(this.vehicleFront);
+            }
+        }
+        if (null != this.carriers) {
+            for (CarrierState cs : this.carriers) {
                 cs.setFront(this.vehicleFront);
             }
         }
@@ -3413,6 +4237,17 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                 cs.setBack(this.vehicleBack);
             }
         }
+        if (null != this.waypoints) {
+            for (CarrierState cs : this.waypoints) {
+                cs.setBack(this.vehicleBack);
+            }
+        }
+        if (null != this.carriers) {
+            for (CarrierState cs : this.carriers) {
+                cs.setBack(this.vehicleBack);
+            }
+        }
+        this.repaint();
     }
 
     /**
@@ -3531,7 +4366,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         } else {
             next_goal_index++;
         }
-        System.out.println("next_goal_index = " + next_goal_index);
+//        System.out.println("next_goal_index = " + next_goal_index);
         return simGoals.get(next_goal_index);
     }
     private double simMoveDist = 0.5f;
@@ -3615,7 +4450,6 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         this.showControlPath = showControlPath;
         this.repaint();
     }
-    
 //    private void addCarrierStateBoundaries(List<Boundary> boundaries_list,
 //            CarrierState cs) {
 //        AngleD csj_angle = cs.getAngle();
@@ -3682,6 +4516,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                 plotFrame.AddPlot(rotvel_data, "rotVel");
                 plotFrame.setVisible(true);
             }
+            PlannerInput pi = this.getPlannerInput();
             pi.obstacles = this.obstacles;
             pi.veh_width = this.vehicleWidth;
             pi.front = this.vehicleFront;
@@ -3689,6 +4524,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
             pi.crab = this.crab;
             pi.reverse = this.reverse;
             pi.min_turn_radius = this.getMinTurnRadius();
+            pi.max_turn_angle_degrees = this.getMaxTurnAngleDegrees();
             pi.plannerResolution = this.getPlannerResolution();
             pi.max_pt2pt_dist = this.getMax_pt2pt_dist();
             pi.planningHorizon = this.getPlanningHorizon();
@@ -3752,7 +4588,11 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                     continue;
                 }
                 csi.setBoundaries(curBoundaries);
-                pi.boundaries = csi.getBoundaries();
+                if (ignoreBoundaries) {
+                    pi.boundaries = null;
+                } else {
+                    pi.boundaries = csi.getBoundaries();
+                }
                 CarrierState goal = csi.getGoal();
                 int goals_checked = 0;
                 boolean no_goal_found = false;
@@ -3761,7 +4601,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                     AngleD goal_angle_diff = AngleD.diff(goal.getAngle(), csi.getAngle());
                     if (goal.distance(csi) < this.simMoveDist * 3f
                             && goal_angle_diff.getValue() < this.simAngleChange * 3f) {
-                        System.out.println("goal completed : " + goal);
+//                        System.out.println("goal completed : " + goal);
                         CarrierState old_goal = csi.getGoal();
                         CarrierState old_start = csi.getStart();
                         csi.setGoal(null);
@@ -3807,7 +4647,7 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
                 pi.start = csi;
                 pi.goal = goal;
                 if (!skip_replan) {
-                    csi.setPlannerList(Planner.createPlannerList(pi, this.startPoints, this.goalPoints));
+                    csi.setPlannerList(Planner.createPlannerList(pi, this.startPoints, this.goalPoints, waypoints));
                     List<PlannerPoint> newControlPoints = Planner.planWithPlannerList(pi, csi.getPlannerList());
                     if (null == newControlPoints || newControlPoints.size() < 1) {
                         csi.setPath(null);
@@ -4066,4 +4906,44 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
     public void setMax_pt2pt_dist(double max_pt2pt_dist) {
         this.max_pt2pt_dist = max_pt2pt_dist;
     }
+    private GoalSourceEnum goalSource = GoalSourceEnum.CONNECTION;
+
+    /**
+     * Get the value of goalSource
+     *
+     * @return the value of goalSource
+     */
+    public GoalSourceEnum getGoalSource() {
+        return goalSource;
+    }
+
+    /**
+     * Set the value of goalSource
+     *
+     * @param goalSource new value of goalSource
+     */
+    public void setGoalSource(GoalSourceEnum goalSource) {
+        this.goalSource = goalSource;
+    }
+
+    private boolean use_static_planner_list = false;
+
+    /**
+     * Get the value of use_static_planner_list
+     *
+     * @return the value of use_static_planner_list
+     */
+    public boolean isUse_static_planner_list() {
+        return use_static_planner_list;
+    }
+
+    /**
+     * Set the value of use_static_planner_list
+     *
+     * @param use_static_planner_list new value of use_static_planner_list
+     */
+    public void setUse_static_planner_list(boolean use_static_planner_list) {
+        this.use_static_planner_list = use_static_planner_list;
+    }
+
 }

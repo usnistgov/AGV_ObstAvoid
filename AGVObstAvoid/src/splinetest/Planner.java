@@ -20,6 +20,11 @@
  */
 package splinetest;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.PrintStream;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadMXBean;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
@@ -37,7 +42,7 @@ import java.util.List;
  */
 public class Planner {
 
-    public static PlannerPoint startPP;
+    //public static PlannerPoint startPP;
     //public static List<PlannerPoint> ll;
     public static List<PlannerPoint> goalPPList;
     public static List<PlannerPoint> startPPList;
@@ -53,21 +58,101 @@ public class Planner {
         ll.add(new PlannerPoint(o.x - offset2, o.y - offset1));
     }
 
+    public static List<PlannerPoint> surroundPoint(PlannerInput pi, Point2Dd pt, List<PlannerPoint> ll) {
+        if (null == pt) {
+            return ll;
+        }
+        for (double angle = 0; angle < 2 * Math.PI; angle += Math.PI / 12.0) {
+            double cos_angle = Math.cos(angle);
+            double sin_angle = Math.sin(angle);
+            for (double l = pi.min_turn_radius / 2.0; l < 7.0 * pi.min_turn_radius; l += pi.min_turn_radius / 2.0) {
+                ll.add(new PlannerPoint((double) (pt.x + l * cos_angle),
+                        (double) (pt.y + l * sin_angle)));
+            }
+        }
+        return ll;
+    }
+
+    public static List<PlannerPoint> staticPlannerList = null;
+
+    public static void resetPlannerList(List<PlannerPoint> ll) {
+        for(int i = 0; i < ll.size(); i++) {
+            PlannerPoint pp = ll.get(i);
+            pp.checked = false;
+            pp.distFromGoal = Double.POSITIVE_INFINITY;
+            pp.failed_neighbors = null;
+            pp.potential_neighbors = null;
+            pp.opened = false;
+        }
+
+    }
+
+    public static List<PlannerPoint> createStaticPlannerList(PlannerInput pi,
+            List<? extends CarrierState> startList,
+            List<? extends CarrierState> goalList,
+            List<? extends CarrierState> waypointsList) {
+        
+        if (pi.use_static_planner_list && staticPlannerList != null) {
+            resetPlannerList(staticPlannerList);
+            return staticPlannerList;
+        }
+        pi.create_planner_list_start_cpu_ns = Planner.getCpuTimeNs();
+        pi.create_planner_list_start_world_ms = System.currentTimeMillis();
+        double veh_width = pi.veh_width + pi.path_uncertainty;
+        
+        List<PlannerPoint> ll = new LinkedList<PlannerPoint>();
+        for (double x = pi.rectB.x; x < pi.rectB.x + pi.rectB.width; x += pi.plannerResolution) {
+            for (double y = pi.rectB.y; y < pi.rectB.y + pi.rectB.height; y += pi.plannerResolution) {
+                ll.add(new PlannerPoint(x, y));
+            }
+        }
+        List<Boundary> boundaries = pi.boundaries;
+        for (int i = 0; i < ll.size(); i++) {
+            PlannerPoint pp = ll.get(i);
+            boolean pp_removed = false;
+            if (pp_removed) {
+                continue;
+            }
+            if (null != boundaries) {
+                for (int k = 0; k < boundaries.size(); k++) {
+                    Boundary b = boundaries.get(k);
+                    if (b.ptSegDist(pp) < veh_width / 2f+ pi.plannerResolution) {
+                        ll.remove(i);
+                        i--;
+                        break;
+                    }
+                }
+            }
+        }
+        staticPlannerList = ll;
+        pi.create_planner_list_end_cpu_ns = Planner.getCpuTimeNs();
+        pi.create_planner_list_end_world_ms = System.currentTimeMillis();
+        return staticPlannerList;
+    }
+
     public static List<PlannerPoint> createPlannerList(PlannerInput pi,
-            List<? extends Point2Dd> startList,
-            List<? extends Point2Dd> goalList) {
+            List<? extends CarrierState> startList,
+            List<? extends CarrierState> goalList,
+            List<? extends CarrierState> waypointsList) {
+        if (pi.use_static_planner_list) {
+            return createStaticPlannerList(pi, startList, goalList, waypointsList);
+        }
+        pi.create_planner_list_start_cpu_ns = Planner.getCpuTimeNs();
+        pi.create_planner_list_start_world_ms = System.currentTimeMillis();
+        
         goalPPList = new LinkedList<>();
         startPPList = new LinkedList<>();
         List<Obstacle> obstacles = pi.obstacles;
         List<Boundary> boundaries = pi.boundaries;
-        double veh_width = pi.veh_width + pi.path_uncertainty;
         double front = pi.front + pi.path_uncertainty;
         double back = pi.back + pi.path_uncertainty;
-        boolean crab = pi.crab;
+        double veh_width = pi.veh_width + pi.path_uncertainty;
+        
 //        boolean reverse = pi.reverse;
         double max_pt2pt_dist = pi.max_pt2pt_dist;
         List<PlannerPoint> ll = new LinkedList<PlannerPoint>();
         double max_frontback = Math.max(front, back);
+
         if (null != obstacles) {
             try {
                 for (int i = 0; i < obstacles.size(); i++) {
@@ -75,6 +160,9 @@ public class Planner {
                         return null;
                     }
                     Obstacle o = obstacles.get(i);
+                    if (null != pi.rectB && !pi.rectB.contains(o)) {
+                        continue;
+                    }
                     double offset1 = (o.radius + veh_width / 2f + 0.0001f) * 1.0001f;
                     ll.add(new PlannerPoint(o.x + offset1, o.y));
                     ll.add(new PlannerPoint(o.x - offset1, o.y));
@@ -148,13 +236,106 @@ public class Planner {
 //                }
             }
         }
+        
+        if (pi.min_turn_radius > 0 && !pi.crab) {
+            if (null != pi.start) {
+                if (!pi.crab) {
+                    pi.start.setReverse(pi.reverse);
+                }
+                Point2Dd pt = new Point2Dd(pi.start.x + pi.segStartLength * pi.start.getAngle().cos(),
+                        pi.start.y + pi.segStartLength * pi.start.getAngle().sin());
+                ll = surroundPoint(pi, pt, ll);
+//                for (double angle = 0; angle < 2 * Math.PI; angle += Math.PI / 12.0) {
+//                    double cos_angle = Math.cos(angle);
+//                    double sin_angle = Math.sin(angle);
+//                    for (double l = pi.min_turn_radius / 2.0; l < 7.0 * pi.min_turn_radius; l += pi.min_turn_radius / 2.0) {
+//                        ll.add(new PlannerPoint((double) (pi.start.x + pi.segStartLength * pi.goal.getAngle().cos() + l * cos_angle),
+//                                (double) (pi.goal.y + pi.segStartLength * pi.goal.getAngle().cos() + l * sin_angle)));
+//                    }
+//                }
+            }
+            if (null != pi.goal) {
+                if (!pi.crab) {
+                    pi.goal.setReverse(pi.reverse);
+                }
+                Point2Dd pt = new Point2Dd(pi.goal.x - pi.segStartLength * pi.goal.getAngle().cos(),
+                        pi.goal.y - pi.segStartLength * pi.goal.getAngle().sin());
+                ll = surroundPoint(pi, pt, ll);
+//                for (double angle = 0; angle < 2 * Math.PI; angle += Math.PI / 12.0) {
+//                    double cos_angle = Math.cos(angle);
+//                    double sin_angle = Math.sin(angle);
+//                    for (double l = pi.min_turn_radius / 2.0; l < 7.0 * pi.min_turn_radius; l += pi.min_turn_radius / 2.0) {
+//                        ll.add(new PlannerPoint((double) (pi.goal.x - pi.segStartLength * pi.goal.getAngle().cos() + l * cos_angle),
+//                                (double) (pi.goal.y - pi.segStartLength * pi.goal.getAngle().sin() + l * sin_angle)));
+//                    }
+//                }
+            }
+            if (null != startList) {
+                for (CarrierState cs : startList) {
+                    Point2Dd pt = new Point2Dd(cs.x + pi.segStartLength * cs.getAngle().cos(),
+                            cs.y + pi.segStartLength * cs.getAngle().sin());
+                    ll = surroundPoint(pi, pt, ll);
+//                    for (double angle = 0; angle < 2 * Math.PI; angle += Math.PI / 12.0) {
+//                        double cos_angle = Math.cos(angle);
+//                        double sin_angle = Math.sin(angle);
+//                        for (double l = pi.min_turn_radius / 2.0; l < 7.0 * pi.min_turn_radius; l += pi.min_turn_radius / 2.0) {
+//                            ll.add(new PlannerPoint((double) (pt.x + l * cos_angle),
+//                                    (double) (pt.y + l * sin_angle)));
+//                        }
+//                    }
+                }
+            }
+            if (null != goalList) {
+                for (CarrierState cs : goalList) {
+                    Point2Dd pt = new Point2Dd(cs.x - pi.segStartLength * cs.getAngle().cos(),
+                            cs.y - pi.segStartLength * cs.getAngle().sin());
+                    ll = surroundPoint(pi, pt, ll);
+//                    for (double angle = 0; angle < 2 * Math.PI; angle += Math.PI / 12.0) {
+//                        double cos_angle = Math.cos(angle);
+//                        double sin_angle = Math.sin(angle);
+//                        for (double l = pi.min_turn_radius / 2.0; l < 7.0 * pi.min_turn_radius; l += pi.min_turn_radius / 2.0) {
+//                            ll.add(new PlannerPoint((double) (pt.x + l * cos_angle),
+//                                    (double) (pt.y + l * sin_angle)));
+//                        }
+//                    }
+                }
+            }
+            if (null != waypointsList) {
+                for (CarrierState cs : waypointsList) {
+                    Point2Dd pt = new Point2Dd(cs.x - pi.segStartLength * cs.getAngle().cos(),
+                            cs.y - pi.segStartLength * cs.getAngle().sin());
+                    ll = surroundPoint(pi, pt, ll);
+                    Point2Dd pt2 = new Point2Dd(cs.x + pi.segStartLength * cs.getAngle().cos(),
+                            cs.y + pi.segStartLength * cs.getAngle().sin());
+                    ll = surroundPoint(pi, pt2, ll);
+                    ll = surroundPoint(pi, cs, ll);
+//                    for (double angle = 0; angle < 2 * Math.PI; angle += Math.PI / 12.0) {
+//                        double cos_angle = Math.cos(angle);
+//                        double sin_angle = Math.sin(angle);
+//                        for (double l = pi.min_turn_radius / 2.0; l < 7.0 * pi.min_turn_radius; l += pi.min_turn_radius / 2.0) {
+//                            ll.add(new PlannerPoint((double) (pt.x + l * cos_angle),
+//                                    (double) (pt.y + l * sin_angle)));
+//                        }
+//                    }
+                }
+            }
+        }
+        ll = surroundPoint(pi, pi.start, ll);
+        ll = surroundPoint(pi, pi.goal, ll);
+
+//        System.out.println("ll.size() = "+ll.size());
         for (int i = 0; i < ll.size(); i++) {
-            PlannerPoint pp = ll.get(i);
+            PlannerPoint ppi = ll.get(i);
+            if (null != pi.rectB && !pi.rectB.contains(ppi)) {
+                ll.remove(i);
+                i--;
+                continue;
+            }
             boolean pp_removed = false;
             if (null != obstacles) {
                 for (int j = 0; j < obstacles.size(); j++) {
                     Obstacle o = obstacles.get(j);
-                    if (pp.distance(o) < o.radius + veh_width / 2f) {
+                    if (ppi.distance(o) < o.radius + veh_width / 2f) {
                         ll.remove(i);
                         i--;
                         pp_removed = true;
@@ -168,61 +349,18 @@ public class Planner {
             if (null != boundaries) {
                 for (int k = 0; k < boundaries.size(); k++) {
                     Boundary b = boundaries.get(k);
-                    if (b.ptSegDist(pp) < veh_width / 2f) {
+                    if (b.ptSegDist(ppi) < veh_width / 2f) {
                         ll.remove(i);
                         i--;
+                        pp_removed=true;
                         break;
                     }
                 }
             }
-        }
-        if (pi.min_turn_radius > 0) {
-            if (null != pi.start) {
-                for (double angle = 0; angle < 2 * Math.PI; angle += Math.PI / 12.0) {
-                    double cos_angle = Math.cos(angle);
-                    double sin_angle = Math.sin(angle);
-                    for (double l = pi.min_turn_radius / 2.0; l < 5.0 * pi.min_turn_radius; l += pi.min_turn_radius / 2.0) {
-                        ll.add(new PlannerPoint((double) (pi.start.x + l * cos_angle),
-                                (double) (pi.goal.y + l * sin_angle)));
-                    }
-                }
-            }
-            if (null != pi.goal) {
-                for (double angle = 0; angle < 2 * Math.PI; angle += Math.PI / 12.0) {
-                    double cos_angle = Math.cos(angle);
-                    double sin_angle = Math.sin(angle);
-                    for (double l = pi.min_turn_radius / 2.0; l < 5.0 * pi.min_turn_radius; l += pi.min_turn_radius / 2.0) {
-                        ll.add(new PlannerPoint((double) (pi.goal.x + l * cos_angle),
-                                (double) (pi.goal.y + l * sin_angle)));
-                    }
-                }
-            }
-            if (null != startList) {
-                for (Point2Dd pt : startList) {
-                    for (double angle = 0; angle < 2 * Math.PI; angle += Math.PI / 12.0) {
-                        double cos_angle = Math.cos(angle);
-                        double sin_angle = Math.sin(angle);
-                        for (double l = pi.min_turn_radius / 2.0; l < 5.0 * pi.min_turn_radius; l += pi.min_turn_radius / 2.0) {
-                            ll.add(new PlannerPoint((double) (pt.x + l * cos_angle),
-                                    (double) (pt.y + l * sin_angle)));
-                        }
-                    }
-                }
-            }
-            if (null != goalList) {
-                for (Point2Dd pt : goalList) {
-                    for (double angle = 0; angle < 2 * Math.PI; angle += Math.PI / 12.0) {
-                        double cos_angle = Math.cos(angle);
-                        double sin_angle = Math.sin(angle);
-                        for (double l = pi.min_turn_radius / 2.0; l < 5.0 * pi.min_turn_radius; l += pi.min_turn_radius / 2.0) {
-                            ll.add(new PlannerPoint((double) (pt.x + l * cos_angle),
-                                    (double) (pt.y + l * sin_angle)));
-                        }
-                    }
-                }
+            if(pp_removed) {
+                continue;
             }
         }
-//        System.out.println("ll.size() = "+ll.size());
         for (int i = 0; i < ll.size(); i++) {
             PlannerPoint ppi = ll.get(i);
             for (int j = i + 1; j < ll.size(); j++) {
@@ -233,16 +371,19 @@ public class Planner {
                 }
             }
         }
+
+        pi.create_planner_list_end_cpu_ns = Planner.getCpuTimeNs();
+        pi.create_planner_list_end_world_ms = System.currentTimeMillis();
+        
 //        System.out.println("ll.size() = "+ll.size());
         return ll;
     }
 
-    public static List<PlannerPoint> plan(PlannerInput pi) throws Exception {
-        points_checked = 0;
-        List<PlannerPoint> ll = Planner.createPlannerList(pi, null, null);
-        return Planner.planWithPlannerList(pi, ll);
-    }
-
+//    public static List<PlannerPoint> plan(PlannerInput pi) throws Exception {
+//        points_checked = 0;
+//        List<PlannerPoint> ll = Planner.createPlannerList(pi, null, null,null);
+//        return Planner.planWithPlannerList(pi, ll);
+//    }
     public static int countSelected(List<PlannerPoint> pplist) {
         int c = 0;
         if (pplist != null) {
@@ -265,37 +406,168 @@ public class Planner {
         return dist;
     }
 
-    static public boolean checkTurn(Point2Dd uvec1, Point2Dd uvec2, double turn_radius, double distance) {
+    public static double chord(Point2Dd uvec1, Point2Dd uvec2, double turn_radius) {
         double dot = uvec1.unit().dot(uvec2.unit());
-        return distance > turn_radius * Math.sqrt(2 * (1 - dot));
+        return turn_radius * Math.sqrt(2 * (1 - dot));
+    }
+
+    static public boolean checkTurn(Point2Dd uvec1, Point2Dd uvec2, PlannerInput pi, double distance) {
+        double dot = uvec1.unit().dot(uvec2.unit());
+        double chord = pi.min_turn_radius * Math.sqrt(2 * (1 - dot));
+        if (dot < pi.min_turn_radius_dot_limit) {
+            return false;
+        }
+        return distance > chord;
+    }
+    static public PlannerStatusSetter statusSetter = null;
+
+    static public PlannerInput last_succeed_pi = null;
+    static public List<PlannerPoint> last_succeed_pplist = null;
+    static public PlannerInput last_fail_pi = null;
+    static public List<PlannerPoint> last_fail_pplist = null;
+    static public boolean record_stats = false;
+    static public File recordStatsFile = null;
+    static public boolean cpu_time_not_supported = false;
+    static public boolean cpu_time_supported_checked = false;
+
+    static public long getCpuTimeNs() {
+        if (cpu_time_not_supported) {
+            return -1;
+        }
+        ThreadMXBean tmxbean = null;
+        try {
+            tmxbean = ManagementFactory.getThreadMXBean();
+            if (null != tmxbean) {
+                if (!cpu_time_supported_checked) {
+                    cpu_time_not_supported = !tmxbean.isCurrentThreadCpuTimeSupported();
+                } else {
+                    cpu_time_supported_checked = true;
+                }
+                if (cpu_time_not_supported) {
+                    return -1;
+                }
+                return tmxbean.getCurrentThreadCpuTime();
+            }
+        } catch (Exception e) {
+            // ignore any exceptions
+        }
+        return -1;
+    }
+
+    public static double listLength(List<PlannerPoint> pl) {
+        if (null == pl || pl.size() < 2) {
+            return 0;
+        }
+        double d = 0;
+        PlannerPoint lp = pl.get(0);
+        for (int i = 0; i < pl.size(); i++) {
+            PlannerPoint pt = pl.get(i);
+            d += pt.distance(lp);
+            lp = pt;
+        }
+        return d;
+    }
+
+    public static void closeRecordStatsFile() {
+        if(Planner.recordStatsFile != null) {
+            Planner.recordStatsFile = null;
+        }
+    }
+    
+    public static void recordStats(PlannerInput pi,
+            List<PlannerPoint> pplist,
+            List<PlannerPoint> output_list,
+            long wall_time_start_ms,
+            long wall_time_end_ms,
+            long cpu_time_start_ns,
+            long cpu_time_end_ns
+    ) {
+        if (!record_stats) {
+            return;
+        }
+        PrintStream ps = null;
+        try {
+            boolean new_file = false;
+            if (null == recordStatsFile) {
+                new_file = true;
+                recordStatsFile = File.createTempFile("planner_stats_", ".csv");
+                System.out.println("Recording planner stats to "+recordStatsFile.getCanonicalPath());
+            }
+            
+            ps = new PrintStream(new FileOutputStream(recordStatsFile,true));
+            if (new_file) {
+                ps.println("wall_time_start_ms,create_planner_list_start_world_ms,wall_time_diff_s,cpu_time_diff_s,create_list_wall_time_diff_s,create_list_cpu_time_diff_s,total_wall_time_diff_s, total_cpu_time_diff_s,pplist_size,path_found,output_list_size,output_list_length,start_x,start_y,start_angle,goal_x,goal_y,goal_angle");
+            }
+            double wall_time_diff_s = (double) (wall_time_end_ms - wall_time_start_ms) * 1e-3;
+            double cpu_time_diff_s = (double) (cpu_time_end_ns - cpu_time_start_ns) * 1e-9;
+            double create_list_wall_time_diff_s = (double) (pi.create_planner_list_end_world_ms - pi.create_planner_list_start_world_ms) * 1e-3;
+            double create_list_cpu_time_diff_s = (double) (double) (pi.create_planner_list_end_cpu_ns - pi.create_planner_list_start_cpu_ns) * 1e-9;
+            double total_wall_time_diff_s = wall_time_diff_s + create_list_wall_time_diff_s;
+            double total_cpu_time_diff_s = cpu_time_diff_s + create_list_cpu_time_diff_s;
+            ps.println(wall_time_start_ms + "," + pi.create_planner_list_start_world_ms + ","
+                    + wall_time_diff_s + ","
+                    + cpu_time_diff_s + ","
+                    + create_list_wall_time_diff_s + ","
+                    + create_list_cpu_time_diff_s + ","
+                    + total_wall_time_diff_s + ","
+                    + total_cpu_time_diff_s + ","
+                    + ((pplist != null) ? pplist.size() : 0) + ","
+                    + ((output_list != null && output_list.size() > 2)?1:0)+","
+                    + ((output_list != null) ? output_list.size() : 0) + ","
+                    + listLength(output_list) + ","
+                    + pi.start.x + "," + pi.start.y + "," + pi.start.getAngle().toDegrees() + ","
+                    + pi.goal.x + "," + pi.goal.y + "," + pi.goal.getAngle().toDegrees()
+            );
+        } catch (Exception exception) {
+            exception.printStackTrace();
+        }
+        try {
+            if (null != ps) {
+                ps.close();
+                ps = null;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     public synchronized static List<PlannerPoint> planWithPlannerList(PlannerInput pi, List<PlannerPoint> pplist) {
         points_checked = 0;
-        long t = System.currentTimeMillis();
+        long wall_start_time_ms = System.currentTimeMillis();
+        long cpu_start_time_ns = getCpuTimeNs();
         CarrierState start = pi.start;
         CarrierState goal = pi.goal;
         List<Obstacle> obstacles = pi.obstacles;
-        List<Boundary> boundaries = pi.boundaries;
         double veh_width = pi.veh_width + pi.path_uncertainty;
         double front = pi.front + pi.path_uncertainty;
         boolean crab = pi.crab;
         boolean reverse = pi.reverse;
+        pi.min_turn_radius_dot_limit = Math.cos(Math.toRadians(pi.max_turn_angle_degrees));
         AngleD orig_start_angle = start.getAngle();
         AngleD orig_goal_angle = goal.getAngle();
         if (reverse && !crab) {
             front = pi.back + pi.path_uncertainty;
-//            start.setAngle(new AngleD(start.getAngle().getValue() + Math.PI));
-//            goal.setAngle(new AngleD(goal.getAngle().getValue() + Math.PI));
         }
         double max_pt2pt_dist = pi.max_pt2pt_dist;
+        if (!pi.crab) {
+            goal.setReverse(pi.reverse);
+            start.setReverse(pi.reverse);
+        }
+        PlannerPoint trueGoalPP = new PlannerPoint(goal);
+        PlannerPoint trueStartPP = new PlannerPoint(start);
+        PlannerPoint goalPP = trueGoalPP;
+        PlannerPoint startPP = trueStartPP;
+        if (pi.segStartLength > 0) {
+            goalPP = new PlannerPoint(goal.x - pi.segStartLength * goal.getAngle().cos(),
+                    goal.y - pi.segStartLength * goal.getAngle().sin());
+            startPP = new PlannerPoint(start.x + pi.segStartLength * start.getAngle().cos(),
+                    start.y + pi.segStartLength * start.getAngle().sin());
+            startPP.prev_pt = trueStartPP;
+            trueStartPP.next_pt = startPP;
+            goalPP.next_pt = trueGoalPP;
+            trueGoalPP.prev_pt = goalPP;
+        }
 
-        PlannerPoint goalPP = new PlannerPoint(goal);
-        startPP = new PlannerPoint(start);
-        startPP.prev_pt = new PlannerPoint((double) (startPP.x - start.getAngle().cos() * 10),
-                (double) (startPP.y - start.getAngle().sin() * 10));
-        goalPP.next_pt = new PlannerPoint((double) (goalPP.x + goal.getAngle().cos() * 10),
-                (double) (goalPP.y + goal.getAngle().sin() * 10));
         LinkedList<PlannerPoint> openlist = new LinkedList<PlannerPoint>();
         startPP.pathEstimate = startPP.distFromGoal = (double) startPP.distance(goal);
         startPP.pathFromStartDist = 0f;
@@ -344,6 +616,9 @@ public class Planner {
 
         for (PlannerPoint pp : ll2) {
             if (Thread.currentThread().isInterrupted()) {
+                if (null != statusSetter) {
+                    statusSetter.setPlannerStatus("Planner Status: Interrupted");
+                }
                 return null;
             }
             pp.distFromGoal = (double) pp.distance(goalPP);
@@ -377,9 +652,12 @@ public class Planner {
         startPPList.add(startPP);
         startPP.selected = pi.start.selected;
         goalPP.selected = pi.goal.selected;
-        Point2Dd next_goal_diffu = goalPP.next_pt.diff(goalPP).unit();
+        Point2Dd next_goal_diffu = new Point2Dd(goal.getAngle().cos(), goal.getAngle().sin());
         while (openlist.size() > 0 && !goal_found) {
             if (Thread.currentThread().isInterrupted()) {
+                if (null != statusSetter) {
+                    statusSetter.setPlannerStatus("Planner Status: Interrupted");
+                }
                 return null;
             }
             final PlannerPoint pp = getBestFromOpenList(openlist);
@@ -387,9 +665,9 @@ public class Planner {
                 goal_found = true;
                 break;
             }
-            if (pp.selected) {
-                System.out.println("pp = " + pp);
-            }
+//            if (pp.selected) {
+//                System.out.println("pp = " + pp);
+//            }
             if (!pp.opened) {
                 ll2.removeAll(openlist);
                 if (null == pp.potential_neighbors) {
@@ -416,38 +694,61 @@ public class Planner {
                     for (PlannerPoint pppn : ll2) {
                         Point2Dd pppn_pp_diff = pppn.diff(pp);
                         double d0 = pppn_pp_diff.mag();
+                        Point2Dd pppn_pp_diffu = pppn_pp_diff.unit();
+                        Point2Dd goal_pppn_diff = goalPP.diff(pppn);
+                        Point2Dd goal_pppn_diffu = goal_pppn_diff.unit();
+                        double goal_pppn_diff_mag = goal_pppn_diff.mag();
+                        boolean goal_directly_reachable = true;
                         if (d0 < min_d0) {
                             closest_point = pppn;
                             min_d0 = d0;
                         }
+                        boolean is_goal = false;
+                        if (pppn.equals(goalPP)) {
+                            is_goal = true;
+                        }
                         if (!pi.crab && pi.min_turn_radius > 0) {
-                            if (pppn_pp_diff.dot(goal_pp_diffu) > goal_pp_diff_mag
-                                    && !pppn.equals(goalPP)) {
-                                continue;
-                            }
-                            Point2Dd pppn_pp_diffu = pppn.unit();
-                            Point2Dd goal_pppn_diff = goalPP.diff(pp);
-                            Point2Dd goal_pppn_diffu = goal_pppn_diff.unit();
-                            double goal_pppn_diff_mag = goal_pppn_diff.mag();
-                            if (!checkTurn(goal_pppn_diffu,
-                                    pppn_pp_diffu,
-                                    pi.min_turn_radius,
-                                    goal_pppn_diff_mag)) {
-                                continue;
-                            }
                             if (null != pp_prev_diffu) {
                                 if (!checkTurn(pp_prev_diffu,
                                         pppn_pp_diffu,
-                                        pi.min_turn_radius,
+                                        pi,
                                         d0)) {
                                     continue;
                                 }
                             }
+                            if (goal_pppn_diff_mag > pi.plannerResolution) {
+                                if (!checkTurn(goal_pppn_diffu,
+                                        pppn_pp_diffu,
+                                        pi,
+                                        d0)) {
+                                    goal_directly_reachable = false;
+                                }
+                                if (!checkTurn(goal_pppn_diffu,
+                                        next_goal_diffu,
+                                        pi,
+                                        goal_pppn_diff_mag)) {
+                                    goal_directly_reachable = false;
+                                }
+                            } else {
+                                if (!checkTurn(pppn_pp_diffu,
+                                        next_goal_diffu,
+                                        pi,
+                                        d0)) {
+                                    goal_directly_reachable = false;
+                                }
+                            }
+                        }
+                        if (!goal_directly_reachable
+                                && pppn.distFromGoal < 3 * pi.min_turn_radius) {
+                            continue;
                         }
                         if (d0 <= pi.planningHorizon
                                 || pi.planningHorizon <= 0
                                 || pppn.equals(goalPP)) {
                             pppn.d1 = pp.distance(pppn) + pppn.distFromGoal;
+                            if (!goal_directly_reachable) {
+                                pppn.d1 += pi.min_turn_radius;
+                            }
                             pppnl.add(pppn);
                         }
                     }
@@ -466,7 +767,7 @@ public class Planner {
                     } catch (Exception e) {
                         System.err.println();
                         System.err.flush();
-                        System.out.println("pppnl.size() = " + pppnl.size());
+//                        System.out.println("pppnl.size() = " + pppnl.size());
 //                        for (int i = 0; i < pppnl.size(); i++) {
 //                            PlannerPoint pppn = pppnl.get(i);
 //                            Double d1chk = d1chkl.get(pppn);
@@ -513,9 +814,9 @@ public class Planner {
                     if (checkPoint(pp, potential_neighbor,
                             pi,
                             false)) {
-                        if (potential_neighbor.selected) {
-                            System.out.println("potential_neighbor = " + potential_neighbor);
-                        }
+//                        if (potential_neighbor.selected && pi) {
+//                            System.out.println("potential_neighbor = " + potential_neighbor);
+//                        }
                         if (pp.neighbors == null) {
                             pp.neighbors = new LinkedList<PlannerPoint>();
                         }
@@ -554,6 +855,23 @@ public class Planner {
 //                start.setAngle(orig_start_angle);
 //                goal.setAngle(orig_goal_angle);
 //            }
+            long wall_end_time_ms = System.currentTimeMillis();
+            long cpu_end_time_ns = getCpuTimeNs();
+            Planner.recordStats(pi, pplist, null, wall_start_time_ms, wall_end_time_ms, cpu_start_time_ns, cpu_end_time_ns);
+            plan_time = wall_end_time_ms - wall_start_time_ms;
+            if (plan_time > max_plan_time) {
+                max_plan_time = plan_time;
+            }
+            last_points_checked = points_checked;
+            if (points_checked > max_points_checked) {
+                max_points_checked = points_checked;
+            }
+            if (null != statusSetter) {
+                statusSetter.setPlannerStatus("Planner Status: No route to goal found. points_checked=" + points_checked + ", plan_time=" + plan_time + " ms");
+            }
+            last_fail_pi = pi.clone();
+            last_fail_pplist = new LinkedList<PlannerPoint>();
+            last_fail_pplist.addAll(pplist);
             return null;
         }
         double base_dist = computePathDist(pp);
@@ -574,7 +892,7 @@ public class Planner {
 //                System.err.println("checkPoint failed on output path.");
 //            }
             double dist = pp.distance(pp.prev_pt);
-            if(null == pp.prev_pt.next_pt) {
+            if (null == pp.prev_pt.next_pt) {
                 pp.prev_pt.next_pt = pp;
             }
             if (dist > max_pt2pt_dist) {
@@ -586,30 +904,27 @@ public class Planner {
                 Point2Dd prev_prev_diffu = null;
                 Point2Dd next_pp_diff = null;
                 Point2Dd next_pp_diffu = null;
-                if(pp.prev_pt.prev_pt != null) {
+                if (pp.prev_pt.prev_pt != null) {
                     prev_prev_diff = pp.prev_pt.diff(pp.prev_pt.prev_pt);
                     prev_prev_diffu = prev_prev_diff.unit();
                 }
-                if(pp.equals(startPP)) {
-                    
+                if (pp.equals(startPP)) {
                 }
-                if(null != pp.next_pt) {
+                if (null != pp.next_pt) {
                     next_pp_diff = pp.next_pt.diff(pp);
                     next_pp_diffu = next_pp_diff.unit();
                 }
                 for (int i = 1; i < num_segments; i++) {
-                    PlannerPoint new_pp = 
-                            new PlannerPoint(
-                            pp.x * (num_segments - i) / num_segments + pp.prev_pt.x * (i) / num_segments,
-                            pp.y * (num_segments - i) / num_segments + pp.prev_pt.y * (i) / num_segments);
-                    if(null != next_pp_diffu &&
-                            !checkTurn(next_pp_diffu,pp_prev_diff,pi.min_turn_radius,new_pp.diff(pp).mag()))
-                    {
+                    PlannerPoint new_pp
+                            = new PlannerPoint(
+                                    pp.x * (num_segments - i) / num_segments + pp.prev_pt.x * (i) / num_segments,
+                                    pp.y * (num_segments - i) / num_segments + pp.prev_pt.y * (i) / num_segments);
+                    if (null != next_pp_diffu
+                            && !checkTurn(next_pp_diffu, pp_prev_diff, pi, new_pp.diff(pp).mag())) {
                         continue;
                     }
-                    if(null != prev_prev_diffu &&
-                            !checkTurn(pp_prev_diff,prev_prev_diffu,pi.min_turn_radius,new_pp.diff(pp.prev_pt).mag()))
-                    {
+                    if (null != prev_prev_diffu
+                            && !checkTurn(pp_prev_diff, prev_prev_diffu, pi, new_pp.diff(pp.prev_pt).mag())) {
                         continue;
                     }
                     path.addFirst(new_pp);
@@ -622,13 +937,29 @@ public class Planner {
 
             path.addFirst(pp);
         }
-        
-//        System.out.println("Plan time = " + (System.currentTimeMillis() - t));
-//        System.out.println("points_checked = " + points_checked);
-//        if (reverse && !crab) {
-//            start.setAngle(orig_start_angle);
-//            goal.setAngle(orig_goal_angle);
-//        }
+        if (startPP != trueStartPP) {
+            path.addFirst(trueStartPP);
+        }
+        if (goalPP != trueGoalPP) {
+            path.add(trueGoalPP);
+        }
+        plan_time = System.currentTimeMillis() - wall_start_time_ms;
+        if (plan_time > max_plan_time) {
+            max_plan_time = plan_time;
+        }
+        long wall_end_time_ms = System.currentTimeMillis();
+        long cpu_end_time_ns = getCpuTimeNs();
+        Planner.recordStats(pi, pplist, path, wall_start_time_ms, wall_end_time_ms, cpu_start_time_ns, cpu_end_time_ns);
+        last_points_checked = points_checked;
+        if (points_checked > max_points_checked) {
+            max_points_checked = points_checked;
+        }
+        if (null != statusSetter) {
+            statusSetter.setPlannerStatus("Planner Status: path.size()=" + path.size() + ", points_checked=" + points_checked + ", plan_time = " + plan_time + " ms");
+        }
+        last_succeed_pi = pi.clone();
+        last_succeed_pplist = new LinkedList<PlannerPoint>();
+        last_succeed_pplist.addAll(pplist);
         return path;
     }
 
@@ -641,8 +972,11 @@ public class Planner {
         }
         return best_pp;
     }
-
-    static private int points_checked = 0;
+    static public int points_checked = 0;
+    static public int last_points_checked = 0;
+    static public int max_points_checked = 0;
+    static public long plan_time = 0;
+    static public long max_plan_time = 0;
     static double min_failed_angle = Double.POSITIVE_INFINITY;
 
     static public boolean checkPoint(
@@ -779,7 +1113,7 @@ public class Planner {
 //                            return false;
 //                        }
 //                    }
-                    if (!checkTurn(prev_diffu, diffu, pi.min_turn_radius, diff_mag)) {
+                    if (!checkTurn(prev_diffu, diffu, pi, diff_mag)) {
                         return false;
                     }
                 }
@@ -828,7 +1162,7 @@ public class Planner {
 //                            return false;
 //                        }
 //                    }
-                    if (!checkTurn(next_diffu, diffu, pi.min_turn_radius, diff_mag)) {
+                    if (!checkTurn(next_diffu, diffu, pi, diff_mag)) {
                         return false;
                     }
                 }
@@ -1153,4 +1487,5 @@ public class Planner {
         }
         return true;
     }
+    
 }

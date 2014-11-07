@@ -84,6 +84,10 @@ public class AngleD implements Comparable<AngleD> {
     public double sin() {
         return Math.sin(value);
     }
+    
+    public Point2Dd unit() {
+        return new Point2Dd(this.cos(),this.sin());
+    }
 
     public static AngleD diff(AngleD a1, AngleD a2) {
         return new AngleD(a1.value - a2.value);
@@ -129,4 +133,6 @@ public class AngleD implements Comparable<AngleD> {
     public int absCompareTo(AngleD o2) {
         return absCompare(this, o2);
     }
+    
+    
 }

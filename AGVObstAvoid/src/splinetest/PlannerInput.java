@@ -35,18 +35,32 @@ public class PlannerInput implements Cloneable{
     CarrierState start;
     CarrierState goal;
     List<Obstacle> obstacles;
-    double veh_width;
-    double front;
-    double back;
-    double path_uncertainty;
+    boolean use_static_planner_list;
+    public double veh_width;
+    public double front;
+    public double back;
+    public double path_uncertainty;
     boolean crab;
-    double max_pt2pt_dist;
+    Rectangle2Dd rectB;
+    public double max_pt2pt_dist;
     List<Boundary> boundaries;
-    double plannerResolution;
+    public double plannerResolution;
     int max_cntrl_pts;
     boolean reverse;
-    double min_turn_radius;
-    double planningHorizon;
+    public double min_turn_radius;
+    public double min_turn_radius_dot_limit;
+    public double planningHorizon;
+    public double segStartLength;
+    public double max_turn_angle_degrees;
+    
+    public long create_planner_list_start_world_ms;
+    public long create_planner_list_start_cpu_ns;
+    public long create_planner_list_end_world_ms;
+    public long create_planner_list_end_cpu_ns;
+    
+//    public double goal_start_surround_angle_inc;
+//    public double goal_start_surround_dist_inc;
+//    public double goal_start_surround_dist_max;
     
     @Override
     public PlannerInput clone() {
@@ -66,6 +80,17 @@ public class PlannerInput implements Cloneable{
         pi.reverse = this.reverse;
         pi.min_turn_radius = this.min_turn_radius;
         pi.planningHorizon = this.planningHorizon;
+        pi.segStartLength = this.segStartLength;
+        pi.max_turn_angle_degrees = this.max_turn_angle_degrees;
+        this.min_turn_radius_dot_limit = Math.cos(Math.toRadians(this.max_turn_angle_degrees));
+        pi.min_turn_radius_dot_limit = this.min_turn_radius_dot_limit;
+        pi.create_planner_list_start_world_ms = this.create_planner_list_start_world_ms;
+        pi.create_planner_list_start_cpu_ns = this.create_planner_list_start_cpu_ns;
+        pi.create_planner_list_end_world_ms = this.create_planner_list_end_world_ms;
+        pi.create_planner_list_end_cpu_ns = this.create_planner_list_end_cpu_ns;
+//        pi.goal_start_surround_angle_inc = this.goal_start_surround_angle_inc;
+//        pi.goal_start_surround_dist_inc = this.goal_start_surround_dist_inc;
+//        pi.goal_start_surround_dist_max = this.goal_start_surround_dist_max;
         return pi;
     }
     

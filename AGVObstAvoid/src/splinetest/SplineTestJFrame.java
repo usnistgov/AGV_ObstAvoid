@@ -21,13 +21,15 @@
 package splinetest;
 
 import java.awt.Component;
-import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.Point;
 import java.awt.Rectangle;
+import java.awt.Toolkit;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.geom.Rectangle2D;
+import java.beans.PropertyChangeEvent;
+import java.beans.PropertyChangeListener;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
@@ -37,6 +39,8 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.io.StringReader;
+import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
@@ -56,6 +60,11 @@ import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
+import java.util.Vector;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.SynchronousQueue;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.swing.JFileChooser;
@@ -63,6 +72,8 @@ import javax.swing.JFrame;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
 import javax.swing.JViewport;
+import javax.swing.ProgressMonitor;
+import javax.swing.SwingWorker;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
 /**
@@ -80,6 +91,18 @@ public class SplineTestJFrame extends javax.swing.JFrame {
         initComponents();
         this.centerDrawPanelViewPort();
         this.loadRecentFiles();
+        Planner.statusSetter = new PlannerStatusSetter() {
+            @Override
+            public void setPlannerStatus(final String s) {
+                java.awt.EventQueue.invokeLater(new Runnable() {
+                    @Override
+                    public void run() {
+                        jLabelPlannerStatus.setText(s);
+                    }
+                });
+            }
+        };
+        this.updateAngle();
     }
 
     /**
@@ -93,6 +116,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
 
         buttonGroupDrawMode = new javax.swing.ButtonGroup();
         jSeparator3 = new javax.swing.JSeparator();
+        buttonGroupGoalSource = new javax.swing.ButtonGroup();
         jScrollPane1 = new javax.swing.JScrollPane();
         splinePanel1 = new splinetest.SplinePanel();
         jToolBar1 = new javax.swing.JToolBar();
@@ -100,12 +124,14 @@ public class SplineTestJFrame extends javax.swing.JFrame {
         jSeparator1 = new javax.swing.JToolBar.Separator();
         jRadioButtonStart = new javax.swing.JRadioButton();
         jRadioButtonGoal = new javax.swing.JRadioButton();
+        jRadioButtonWaypoint = new javax.swing.JRadioButton();
         jRadioButtonObstacle = new javax.swing.JRadioButton();
         jRadioButtonSelect = new javax.swing.JRadioButton();
         jRadioButtonBoundary = new javax.swing.JRadioButton();
         jRadioButtonHorzBoundary = new javax.swing.JRadioButton();
         jRadioButtonVertBoundary = new javax.swing.JRadioButton();
         jRadioButtonPan = new javax.swing.JRadioButton();
+        jRadioButtonDrawPlanningRect = new javax.swing.JRadioButton();
         jSeparator2 = new javax.swing.JToolBar.Separator();
         jButtonZoomMore = new javax.swing.JButton();
         jButtonZoomLess = new javax.swing.JButton();
@@ -115,17 +141,27 @@ public class SplineTestJFrame extends javax.swing.JFrame {
         jCheckBoxShowPlanning = new javax.swing.JCheckBox();
         jCheckBoxCrab = new javax.swing.JCheckBox();
         jCheckBoxReverse = new javax.swing.JCheckBox();
+        jCheckBoxIgnoreBoundaries = new javax.swing.JCheckBox();
         jCheckBoxShowOutlines = new javax.swing.JCheckBox();
-        jCheckBoxShowPlanOutline = new javax.swing.JCheckBox();
         jCheckBoxShowControlPath = new javax.swing.JCheckBox();
         jCheckBoxLabelControlPoints = new javax.swing.JCheckBox();
         jCheckBoxShowGrid = new javax.swing.JCheckBox();
         jCheckBoxLabelGrid = new javax.swing.JCheckBox();
         jCheckBoxSimulation = new javax.swing.JCheckBox();
-        jCheckBoxShowSideCurves = new javax.swing.JCheckBox();
-        jCheckBoxShowCenterCurve = new javax.swing.JCheckBox();
+        jCheckBoxShowPlanOutline = new javax.swing.JCheckBox();
+        jLabelVehicleStatus = new javax.swing.JLabel();
+        jLabelPlannerStatus = new javax.swing.JLabel();
+        jToolBar3 = new javax.swing.JToolBar();
         jCheckBoxExclusiveTracks = new javax.swing.JCheckBox();
-        jLabelStatus = new javax.swing.JLabel();
+        jCheckBoxShowCenterCurve = new javax.swing.JCheckBox();
+        jCheckBoxShowSideCurves = new javax.swing.JCheckBox();
+        jLabelAngle = new javax.swing.JLabel();
+        jButtonModifyAngle = new javax.swing.JButton();
+        jButtonUp = new javax.swing.JButton();
+        jButtonDown = new javax.swing.JButton();
+        jButtonLeft = new javax.swing.JButton();
+        jButtonRight = new javax.swing.JButton();
+        jButtonSendManualGoal = new javax.swing.JButton();
         jMenuBar1 = new javax.swing.JMenuBar();
         jMenu1 = new javax.swing.JMenu();
         jMenuItemFileSaveAs = new javax.swing.JMenuItem();
@@ -149,7 +185,11 @@ public class SplineTestJFrame extends javax.swing.JFrame {
         jCheckBoxMenuItemDebugVehicleComm = new javax.swing.JCheckBoxMenuItem();
         jCheckBoxMenuItemConnectToObsDetect = new javax.swing.JCheckBoxMenuItem();
         jCheckBoxMenuItemDebugObsDetComm = new javax.swing.JCheckBoxMenuItem();
-        jCheckBoxMenuItemConnectToVehicleManual = new javax.swing.JCheckBoxMenuItem();
+        jSeparator4 = new javax.swing.JPopupMenu.Separator();
+        jRadioButtonMenuItemGoalFromConnection = new javax.swing.JRadioButtonMenuItem();
+        jRadioButtonMenuItemManualGoal = new javax.swing.JRadioButtonMenuItem();
+        jRadioButtonMenuItemGoalFromWaypoints = new javax.swing.JRadioButtonMenuItem();
+        jCheckBoxMenuItemConfirmControlPoints = new javax.swing.JCheckBoxMenuItem();
         jMenuChecks = new javax.swing.JMenu();
         jMenuItemReCheckPath = new javax.swing.JMenuItem();
         jMenuItemForceReplanning = new javax.swing.JMenuItem();
@@ -157,9 +197,18 @@ public class SplineTestJFrame extends javax.swing.JFrame {
         jMenuItemSwapGoalStart = new javax.swing.JMenuItem();
         jMenuItemPlotLastCntrlPtsSent = new javax.swing.JMenuItem();
         jCheckBoxMenuItemPlotAllCntlrPts = new javax.swing.JCheckBoxMenuItem();
+        jMenuItemPlotSplinesWithControlPoints = new javax.swing.JMenuItem();
+        jMenuItem2 = new javax.swing.JMenuItem();
+        jMenuItemPlotCurveRadius = new javax.swing.JMenuItem();
+        jMenuItemTestPlanningParam = new javax.swing.JMenuItem();
+        jCheckBoxMenuItemRecordPlannerStats = new javax.swing.JCheckBoxMenuItem();
+        jMenuItemPlotRecordedPlannerStats = new javax.swing.JMenuItem();
+        jMenuItemTestAllPositons = new javax.swing.JMenuItem();
         jMenuBackground = new javax.swing.JMenu();
         jCheckBoxMenuItemShowBackground = new javax.swing.JCheckBoxMenuItem();
         jMenuItem1 = new javax.swing.JMenuItem();
+        jMenuOptions = new javax.swing.JMenu();
+        jCheckBoxMenuItemStaticPlannerList = new javax.swing.JCheckBoxMenuItem();
 
         setDefaultCloseOperation(javax.swing.WindowConstants.EXIT_ON_CLOSE);
         setTitle("AGV Obstacle Avoidance Spline Planning");
@@ -228,6 +277,18 @@ public class SplineTestJFrame extends javax.swing.JFrame {
             }
         });
         jToolBar1.add(jRadioButtonGoal);
+
+        buttonGroupDrawMode.add(jRadioButtonWaypoint);
+        jRadioButtonWaypoint.setText(" Waypoint ");
+        jRadioButtonWaypoint.setFocusable(false);
+        jRadioButtonWaypoint.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
+        jRadioButtonWaypoint.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
+        jRadioButtonWaypoint.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jRadioButtonWaypointActionPerformed(evt);
+            }
+        });
+        jToolBar1.add(jRadioButtonWaypoint);
 
         buttonGroupDrawMode.add(jRadioButtonObstacle);
         jRadioButtonObstacle.setText(" Obstacle ");
@@ -300,6 +361,18 @@ public class SplineTestJFrame extends javax.swing.JFrame {
             }
         });
         jToolBar1.add(jRadioButtonPan);
+
+        buttonGroupDrawMode.add(jRadioButtonDrawPlanningRect);
+        jRadioButtonDrawPlanningRect.setText(" Draw Planning Rect. ");
+        jRadioButtonDrawPlanningRect.setFocusable(false);
+        jRadioButtonDrawPlanningRect.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
+        jRadioButtonDrawPlanningRect.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
+        jRadioButtonDrawPlanningRect.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jRadioButtonDrawPlanningRectActionPerformed(evt);
+            }
+        });
+        jToolBar1.add(jRadioButtonDrawPlanningRect);
         jToolBar1.add(jSeparator2);
 
         jButtonZoomMore.setText(" Zoom + ");
@@ -382,6 +455,18 @@ public class SplineTestJFrame extends javax.swing.JFrame {
         });
         jToolBar2.add(jCheckBoxReverse);
 
+        jCheckBoxIgnoreBoundaries.setText(" Ignore Boundaries ");
+        jCheckBoxIgnoreBoundaries.setFocusable(false);
+        jCheckBoxIgnoreBoundaries.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
+        jCheckBoxIgnoreBoundaries.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
+        jCheckBoxIgnoreBoundaries.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jCheckBoxIgnoreBoundariesActionPerformed(evt);
+            }
+        });
+        jToolBar2.add(jCheckBoxIgnoreBoundaries);
+
+        jCheckBoxShowOutlines.setSelected(true);
         jCheckBoxShowOutlines.setText(" Show Outlines ");
         jCheckBoxShowOutlines.setFocusable(false);
         jCheckBoxShowOutlines.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
@@ -392,17 +477,6 @@ public class SplineTestJFrame extends javax.swing.JFrame {
             }
         });
         jToolBar2.add(jCheckBoxShowOutlines);
-
-        jCheckBoxShowPlanOutline.setText(" Show Plan  Exclusion Outline ");
-        jCheckBoxShowPlanOutline.setFocusable(false);
-        jCheckBoxShowPlanOutline.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
-        jCheckBoxShowPlanOutline.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
-        jCheckBoxShowPlanOutline.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jCheckBoxShowPlanOutlineActionPerformed(evt);
-            }
-        });
-        jToolBar2.add(jCheckBoxShowPlanOutline);
 
         jCheckBoxShowControlPath.setText(" Show Control Path ");
         jCheckBoxShowControlPath.setFocusable(false);
@@ -459,27 +533,23 @@ public class SplineTestJFrame extends javax.swing.JFrame {
         });
         jToolBar2.add(jCheckBoxSimulation);
 
-        jCheckBoxShowSideCurves.setText(" Show Side Curves ");
-        jCheckBoxShowSideCurves.setFocusable(false);
-        jCheckBoxShowSideCurves.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
-        jCheckBoxShowSideCurves.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
-        jCheckBoxShowSideCurves.addActionListener(new java.awt.event.ActionListener() {
+        jCheckBoxShowPlanOutline.setText(" Show Plan  Exclusion Outline ");
+        jCheckBoxShowPlanOutline.setFocusable(false);
+        jCheckBoxShowPlanOutline.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
+        jCheckBoxShowPlanOutline.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
+        jCheckBoxShowPlanOutline.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jCheckBoxShowSideCurvesActionPerformed(evt);
+                jCheckBoxShowPlanOutlineActionPerformed(evt);
             }
         });
-        jToolBar2.add(jCheckBoxShowSideCurves);
+        jToolBar2.add(jCheckBoxShowPlanOutline);
 
-        jCheckBoxShowCenterCurve.setText(" Show Center Curve ");
-        jCheckBoxShowCenterCurve.setFocusable(false);
-        jCheckBoxShowCenterCurve.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
-        jCheckBoxShowCenterCurve.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
-        jCheckBoxShowCenterCurve.addActionListener(new java.awt.event.ActionListener() {
-            public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jCheckBoxShowCenterCurveActionPerformed(evt);
-            }
-        });
-        jToolBar2.add(jCheckBoxShowCenterCurve);
+        jLabelVehicleStatus.setText("Vehicle Status:");
+
+        jLabelPlannerStatus.setText("Plan : ");
+
+        jToolBar3.setFloatable(false);
+        jToolBar3.setRollover(true);
 
         jCheckBoxExclusiveTracks.setText(" Exclusive Tracks");
         jCheckBoxExclusiveTracks.setFocusable(false);
@@ -490,9 +560,100 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                 jCheckBoxExclusiveTracksActionPerformed(evt);
             }
         });
-        jToolBar2.add(jCheckBoxExclusiveTracks);
+        jToolBar3.add(jCheckBoxExclusiveTracks);
 
-        jLabelStatus.setText("Status:");
+        jCheckBoxShowCenterCurve.setSelected(true);
+        jCheckBoxShowCenterCurve.setText(" Show Center Curve ");
+        jCheckBoxShowCenterCurve.setFocusable(false);
+        jCheckBoxShowCenterCurve.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
+        jCheckBoxShowCenterCurve.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
+        jCheckBoxShowCenterCurve.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jCheckBoxShowCenterCurveActionPerformed(evt);
+            }
+        });
+        jToolBar3.add(jCheckBoxShowCenterCurve);
+
+        jCheckBoxShowSideCurves.setText(" Show Side Curves ");
+        jCheckBoxShowSideCurves.setFocusable(false);
+        jCheckBoxShowSideCurves.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
+        jCheckBoxShowSideCurves.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
+        jCheckBoxShowSideCurves.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jCheckBoxShowSideCurvesActionPerformed(evt);
+            }
+        });
+        jToolBar3.add(jCheckBoxShowSideCurves);
+
+        jLabelAngle.setText(" Angle (in degrees):  90.0 ");
+        jToolBar3.add(jLabelAngle);
+
+        jButtonModifyAngle.setText("Modify Angle");
+        jButtonModifyAngle.setFocusable(false);
+        jButtonModifyAngle.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
+        jButtonModifyAngle.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
+        jButtonModifyAngle.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jButtonModifyAngleActionPerformed(evt);
+            }
+        });
+        jToolBar3.add(jButtonModifyAngle);
+
+        jButtonUp.setText("Up");
+        jButtonUp.setFocusable(false);
+        jButtonUp.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
+        jButtonUp.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
+        jButtonUp.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jButtonUpActionPerformed(evt);
+            }
+        });
+        jToolBar3.add(jButtonUp);
+
+        jButtonDown.setText("Down");
+        jButtonDown.setFocusable(false);
+        jButtonDown.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
+        jButtonDown.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
+        jButtonDown.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jButtonDownActionPerformed(evt);
+            }
+        });
+        jToolBar3.add(jButtonDown);
+
+        jButtonLeft.setText("Left");
+        jButtonLeft.setFocusable(false);
+        jButtonLeft.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
+        jButtonLeft.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
+        jButtonLeft.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jButtonLeftActionPerformed(evt);
+            }
+        });
+        jToolBar3.add(jButtonLeft);
+
+        jButtonRight.setText("Right");
+        jButtonRight.setFocusable(false);
+        jButtonRight.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
+        jButtonRight.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
+        jButtonRight.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jButtonRightActionPerformed(evt);
+            }
+        });
+        jToolBar3.add(jButtonRight);
+
+        jButtonSendManualGoal.setText(" Send Manual Goal ");
+        jButtonSendManualGoal.setEnabled(false);
+        jButtonSendManualGoal.setFocusable(false);
+        jButtonSendManualGoal.setHorizontalTextPosition(javax.swing.SwingConstants.CENTER);
+        jButtonSendManualGoal.setVerticalTextPosition(javax.swing.SwingConstants.BOTTOM);
+        jButtonSendManualGoal.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jButtonSendManualGoalActionPerformed(evt);
+            }
+        });
+        jToolBar3.add(jButtonSendManualGoal);
 
         jMenu1.setText("File");
 
@@ -649,14 +810,39 @@ public class SplineTestJFrame extends javax.swing.JFrame {
             }
         });
         jMenuConnections.add(jCheckBoxMenuItemDebugObsDetComm);
+        jMenuConnections.add(jSeparator4);
 
-        jCheckBoxMenuItemConnectToVehicleManual.setText("Connect To Vehicle (Manual Goal) ");
-        jCheckBoxMenuItemConnectToVehicleManual.addActionListener(new java.awt.event.ActionListener() {
+        buttonGroupGoalSource.add(jRadioButtonMenuItemGoalFromConnection);
+        jRadioButtonMenuItemGoalFromConnection.setSelected(true);
+        jRadioButtonMenuItemGoalFromConnection.setText("Get Vehicle Goal From Connection");
+        jRadioButtonMenuItemGoalFromConnection.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
-                jCheckBoxMenuItemConnectToVehicleManualActionPerformed(evt);
+                jRadioButtonMenuItemGoalFromConnectionActionPerformed(evt);
             }
         });
-        jMenuConnections.add(jCheckBoxMenuItemConnectToVehicleManual);
+        jMenuConnections.add(jRadioButtonMenuItemGoalFromConnection);
+
+        buttonGroupGoalSource.add(jRadioButtonMenuItemManualGoal);
+        jRadioButtonMenuItemManualGoal.setText("Get Vehicle Goal Manually");
+        jRadioButtonMenuItemManualGoal.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jRadioButtonMenuItemManualGoalActionPerformed(evt);
+            }
+        });
+        jMenuConnections.add(jRadioButtonMenuItemManualGoal);
+
+        buttonGroupGoalSource.add(jRadioButtonMenuItemGoalFromWaypoints);
+        jRadioButtonMenuItemGoalFromWaypoints.setText("Get Vehicle Goal from Existing Waypoints");
+        jRadioButtonMenuItemGoalFromWaypoints.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jRadioButtonMenuItemGoalFromWaypointsActionPerformed(evt);
+            }
+        });
+        jMenuConnections.add(jRadioButtonMenuItemGoalFromWaypoints);
+
+        jCheckBoxMenuItemConfirmControlPoints.setSelected(true);
+        jCheckBoxMenuItemConfirmControlPoints.setText("Confirm Control Points?");
+        jMenuConnections.add(jCheckBoxMenuItemConfirmControlPoints);
 
         jMenuBar1.add(jMenuConnections);
 
@@ -678,6 +864,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
         });
         jMenuChecks.add(jMenuItemForceReplanning);
 
+        jCheckBoxMenuItemReplanOnAllChanges.setSelected(true);
         jCheckBoxMenuItemReplanOnAllChanges.setText("Replan on all changes");
         jCheckBoxMenuItemReplanOnAllChanges.addActionListener(new java.awt.event.ActionListener() {
             public void actionPerformed(java.awt.event.ActionEvent evt) {
@@ -711,6 +898,62 @@ public class SplineTestJFrame extends javax.swing.JFrame {
         });
         jMenuChecks.add(jCheckBoxMenuItemPlotAllCntlrPts);
 
+        jMenuItemPlotSplinesWithControlPoints.setText("Plot Splines");
+        jMenuItemPlotSplinesWithControlPoints.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jMenuItemPlotSplinesWithControlPointsActionPerformed(evt);
+            }
+        });
+        jMenuChecks.add(jMenuItemPlotSplinesWithControlPoints);
+
+        jMenuItem2.setText("Plot Splines with Control Points");
+        jMenuItem2.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jMenuItem2ActionPerformed(evt);
+            }
+        });
+        jMenuChecks.add(jMenuItem2);
+
+        jMenuItemPlotCurveRadius.setText("Plot Curve Radius");
+        jMenuItemPlotCurveRadius.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jMenuItemPlotCurveRadiusActionPerformed(evt);
+            }
+        });
+        jMenuChecks.add(jMenuItemPlotCurveRadius);
+
+        jMenuItemTestPlanningParam.setText("Test Planning Parameter over Range");
+        jMenuItemTestPlanningParam.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jMenuItemTestPlanningParamActionPerformed(evt);
+            }
+        });
+        jMenuChecks.add(jMenuItemTestPlanningParam);
+
+        jCheckBoxMenuItemRecordPlannerStats.setText("Record Planner Stats");
+        jCheckBoxMenuItemRecordPlannerStats.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jCheckBoxMenuItemRecordPlannerStatsActionPerformed(evt);
+            }
+        });
+        jMenuChecks.add(jCheckBoxMenuItemRecordPlannerStats);
+
+        jMenuItemPlotRecordedPlannerStats.setText("Plot Recorded Planner Stats");
+        jMenuItemPlotRecordedPlannerStats.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jMenuItemPlotRecordedPlannerStatsActionPerformed(evt);
+            }
+        });
+        jMenuChecks.add(jMenuItemPlotRecordedPlannerStats);
+
+        jMenuItemTestAllPositons.setText("Test All Positions");
+        jMenuItemTestAllPositons.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jMenuItemTestAllPositonsActionPerformed(evt);
+            }
+        });
+        jMenuChecks.add(jMenuItemTestAllPositons);
+
         jMenuBar1.add(jMenuChecks);
 
         jMenuBackground.setText("Background");
@@ -734,6 +977,19 @@ public class SplineTestJFrame extends javax.swing.JFrame {
 
         jMenuBar1.add(jMenuBackground);
 
+        jMenuOptions.setText("Options");
+
+        jCheckBoxMenuItemStaticPlannerList.setSelected(true);
+        jCheckBoxMenuItemStaticPlannerList.setText("Static Planner List");
+        jCheckBoxMenuItemStaticPlannerList.addActionListener(new java.awt.event.ActionListener() {
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                jCheckBoxMenuItemStaticPlannerListActionPerformed(evt);
+            }
+        });
+        jMenuOptions.add(jCheckBoxMenuItemStaticPlannerList);
+
+        jMenuBar1.add(jMenuOptions);
+
         setJMenuBar(jMenuBar1);
 
         javax.swing.GroupLayout layout = new javax.swing.GroupLayout(getContentPane());
@@ -743,12 +999,13 @@ public class SplineTestJFrame extends javax.swing.JFrame {
             .addComponent(jToolBar1, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
             .addGroup(layout.createSequentialGroup()
                 .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                    .addComponent(jToolBar2, javax.swing.GroupLayout.PREFERRED_SIZE, 876, Short.MAX_VALUE)
                     .addGroup(layout.createSequentialGroup()
                         .addContainerGap()
-                        .addGroup(layout.createParallelGroup(javax.swing.GroupLayout.Alignment.LEADING)
-                            .addComponent(jScrollPane1, javax.swing.GroupLayout.PREFERRED_SIZE, 0, Short.MAX_VALUE)
-                            .addComponent(jLabelStatus, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))))
+                        .addComponent(jScrollPane1, javax.swing.GroupLayout.PREFERRED_SIZE, 0, Short.MAX_VALUE))
+                    .addComponent(jLabelVehicleStatus, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                    .addComponent(jLabelPlannerStatus, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)
+                    .addComponent(jToolBar2, javax.swing.GroupLayout.PREFERRED_SIZE, 0, Short.MAX_VALUE)
+                    .addComponent(jToolBar3, javax.swing.GroupLayout.DEFAULT_SIZE, javax.swing.GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE))
                 .addContainerGap())
         );
         layout.setVerticalGroup(
@@ -758,9 +1015,13 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
                 .addComponent(jToolBar2, javax.swing.GroupLayout.PREFERRED_SIZE, 42, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addComponent(jLabelStatus, javax.swing.GroupLayout.PREFERRED_SIZE, 21, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addComponent(jToolBar3, javax.swing.GroupLayout.PREFERRED_SIZE, 40, javax.swing.GroupLayout.PREFERRED_SIZE)
                 .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
-                .addComponent(jScrollPane1, javax.swing.GroupLayout.DEFAULT_SIZE, 339, Short.MAX_VALUE)
+                .addComponent(jLabelPlannerStatus)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(jLabelVehicleStatus, javax.swing.GroupLayout.PREFERRED_SIZE, 21, javax.swing.GroupLayout.PREFERRED_SIZE)
+                .addPreferredGap(javax.swing.LayoutStyle.ComponentPlacement.RELATED)
+                .addComponent(jScrollPane1, javax.swing.GroupLayout.DEFAULT_SIZE, 302, Short.MAX_VALUE)
                 .addContainerGap())
         );
 
@@ -768,7 +1029,6 @@ public class SplineTestJFrame extends javax.swing.JFrame {
     }// </editor-fold>//GEN-END:initComponents
 
     public void Clear() {
-        Planner.startPP = null;
         this.jCheckBoxSimulation.setSelected(false);
         this.jCheckBoxShowOutlines.setEnabled(true);
         this.splinePanel1.Clear();
@@ -795,6 +1055,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
             this.splinePanel1.setDrawMode(SplineDrawMode.START);
             this.setMoveEnabled(false);
         }
+        this.updateAngle();
     }//GEN-LAST:event_jRadioButtonStartActionPerformed
 
     private void jRadioButtonGoalActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jRadioButtonGoalActionPerformed
@@ -802,6 +1063,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
             this.splinePanel1.setDrawMode(SplineDrawMode.GOAL);
             this.setMoveEnabled(false);
         }
+        this.updateAngle();
     }//GEN-LAST:event_jRadioButtonGoalActionPerformed
 
     private void jRadioButtonObstacleActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jRadioButtonObstacleActionPerformed
@@ -846,7 +1108,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
         JViewport vp = this.jScrollPane1.getViewport();
         Rectangle rect = vp.getViewRect();
         Dimension pref_size = this.splinePanel1.getPreferredSize();
-        Rectangle2D.Double rectB = this.splinePanel1.getBoundingRect();
+        Rectangle2Dd rectB = this.splinePanel1.getBoundingRect();
 //        System.out.println("rectB = " + rectB);
         if (null == rectB || rectB.width < 1e-3f || rectB.height < 1e-3f) {
             return;
@@ -920,6 +1182,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                             ll.add(o);
                         }
                     } catch (Exception e) {
+                        System.err.println("s=" + s);
                         printException(e);
                     }
                     s = s.substring(i + 1);
@@ -1023,33 +1286,33 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                 }
                 String var = line.substring(0, eq_index).trim();
                 String val = line.substring(eq_index + 1).trim();
-                if(var.equalsIgnoreCase("FramePosX")) {
-                    int new_x   = Integer.valueOf(val);
-                    if(new_x != p.x) {
+                if (var.equalsIgnoreCase("FramePosX")) {
+                    int new_x = Integer.valueOf(val);
+                    if (new_x != p.x) {
                         p.x = new_x;
                         FramePosSet = true;
                     }
                     continue;
                 }
-                if(var.equalsIgnoreCase("FramePosY")) {
-                    int new_y   = Integer.valueOf(val);
-                    if(new_y != p.y) {
+                if (var.equalsIgnoreCase("FramePosY")) {
+                    int new_y = Integer.valueOf(val);
+                    if (new_y != p.y) {
                         p.y = new_y;
                         FramePosSet = true;
                     }
                     continue;
                 }
-                if(var.equalsIgnoreCase("FrameSizeWidth")) {
-                    int new_width   = Integer.valueOf(val);
-                    if(new_width != sz.width) {
+                if (var.equalsIgnoreCase("FrameSizeWidth")) {
+                    int new_width = Integer.valueOf(val);
+                    if (new_width != sz.width) {
                         sz.width = new_width;
                         FrameSizeSet = true;
                     }
                     continue;
                 }
-                if(var.equalsIgnoreCase("FrameSizeHeight")) {
-                    int new_height   = Integer.valueOf(val);
-                    if(new_height != sz.height) {
+                if (var.equalsIgnoreCase("FrameSizeHeight")) {
+                    int new_height = Integer.valueOf(val);
+                    if (new_height != sz.height) {
                         sz.height = new_height;
                         FrameSizeSet = true;
                     }
@@ -1088,8 +1351,8 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                         set_method.invoke(this.splinePanel1, o);
                     } else {
                         try {
-                            if(val.length() < 1 || val.compareTo("null") == 0) {
-                                set_method.invoke(this.splinePanel1, new Object[]{ null });
+                            if (val.length() < 1 || val.compareTo("null") == 0) {
+                                set_method.invoke(this.splinePanel1, new Object[]{null});
                             } else {
                                 set_method.invoke(this.splinePanel1, val);
                             }
@@ -1113,12 +1376,27 @@ public class SplineTestJFrame extends javax.swing.JFrame {
             this.jCheckBoxReverse.setSelected(this.splinePanel1.isReverse());
             this.jCheckBoxExclusiveTracks.setSelected(this.splinePanel1.isExclusivePaths());
             this.jCheckBoxShowPlanOutline.setSelected(this.splinePanel1.isShowPlanOutline());
+            this.jCheckBoxMenuItemStaticPlannerList.setSelected(this.splinePanel1.isUse_static_planner_list());
             this.splinePanel1.setCarriers(null);
             this.splinePanel1.StopSimulation();
             this.jCheckBoxSimulation.setSelected(false);
             this.splinePanel1.setCarriers(null);
             this.jCheckBoxMenuItemPlotAllCntlrPts.setSelected(this.splinePanel1.isPlotAllCtrlPtsSent());
             this.jCheckBoxShowControlPath.setSelected(this.splinePanel1.isShowControlPath());
+            this.jCheckBoxIgnoreBoundaries.setSelected(this.splinePanel1.isIgnoreBoundaries());
+            switch (this.splinePanel1.getGoalSource()) {
+                case CONNECTION:
+                    this.jRadioButtonMenuItemGoalFromConnection.setSelected(true);
+                    break;
+
+                case MANUAL:
+                    this.jRadioButtonMenuItemGoalFromWaypoints.setSelected(true);
+                    break;
+
+                case WAYPOINTS:
+                    this.jRadioButtonMenuItemGoalFromWaypoints.setSelected(true);
+                    break;
+            }
             switch (this.splinePanel1.getDrawMode()) {
                 case SELECT:
                     this.jRadioButtonSelect.setSelected(true);
@@ -1156,24 +1434,25 @@ public class SplineTestJFrame extends javax.swing.JFrame {
             this.debugObsDetComm = this.splinePanel1.isDebugObsDetComm();
             this.jCheckBoxMenuItemDebugObsDetComm.setSelected(debugObsDetComm);
             this.jCheckBoxMenuItemShowBackground.setSelected(this.splinePanel1.isShowBackgroundShapes());
-            if (this.splinePanel1.isConnectedToVehicle()) {
-                this.splinePanel1.setReplanOnAllChanges(false);
-            } else {
-                this.jCheckBoxMenuItemReplanOnAllChanges.setSelected(this.splinePanel1.isReplanOnAllChanges());
-            }
-            this.splinePanel1.setManualGoal(false);
+//            if (this.splinePanel1.isConnectedToVehicle()) {
+//                this.splinePanel1.setReplanOnAllChanges(false);
+//            } else {
+//                this.jCheckBoxMenuItemReplanOnAllChanges.setSelected(this.splinePanel1.isReplanOnAllChanges());
+//            }
+            this.jCheckBoxMenuItemReplanOnAllChanges.setSelected(this.splinePanel1.isReplanOnAllChanges());
             this.DisconnectFromObsDetection();
             this.DisconnectFromVehicle();
             this.jCheckBoxMenuItemConnectedToVehicle.setSelected(false);
-            this.jCheckBoxMenuItemConnectToVehicleManual.setSelected(false);
             this.jCheckBoxMenuItemConnectToObsDetect.setSelected(false);
             this.jCheckBoxMenuItemConnectedToVehicle.setEnabled(true);
-            this.jCheckBoxMenuItemConnectToVehicleManual.setEnabled(true);
             this.jCheckBoxMenuItemConnectToObsDetect.setEnabled(true);
-            if(FrameSizeSet) {
+            this.splinePanel1.setVehicleBack(this.splinePanel1.getVehicleBack());
+            this.splinePanel1.setVehicleFront(this.splinePanel1.getVehicleFront());
+            this.splinePanel1.setVehicleWidth(this.splinePanel1.getVehicleWidth());
+            if (FrameSizeSet) {
                 this.setSize(sz);
             }
-            if(FramePosSet) {
+            if (FramePosSet) {
                 this.setLocation(p);
             }
             java.awt.EventQueue.invokeLater(new Runnable() {
@@ -1182,6 +1461,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                     Fit();
                 }
             });
+            this.updateAngle();
         } catch (Exception e) {
             printException(e);
         } finally {
@@ -1252,8 +1532,8 @@ public class SplineTestJFrame extends javax.swing.JFrame {
             printException(e);
         }
     }
-    static private final File recentFileListFile =
-            new File(System.getProperty("user.home"), ".spline_test_recent_files.txt");
+    static private final File recentFileListFile
+            = new File(System.getProperty("user.home"), ".spline_test_recent_files.txt");
 
     /**
      * Set the value of RecentFiles
@@ -1552,14 +1832,10 @@ public class SplineTestJFrame extends javax.swing.JFrame {
     }//GEN-LAST:event_jMenuItemImportDXFBackgroundActionPerformed
 
     private void jCheckBoxMenuItemConnectedToVehicleActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jCheckBoxMenuItemConnectedToVehicleActionPerformed
-        this.splinePanel1.setManualGoal(false);
         if (this.jCheckBoxMenuItemConnectedToVehicle.isSelected()) {
             ConnectToVehicle();
-            this.jCheckBoxMenuItemConnectToVehicleManual.setSelected(false);
-            this.jCheckBoxMenuItemConnectToVehicleManual.setEnabled(false);
         } else {
             DisconnectFromVehicle();
-            this.jCheckBoxMenuItemConnectToVehicleManual.setEnabled(true);
         }
     }//GEN-LAST:event_jCheckBoxMenuItemConnectedToVehicleActionPerformed
 
@@ -1644,19 +1920,98 @@ public class SplineTestJFrame extends javax.swing.JFrame {
         this.splinePanel1.swapGoalStart();
     }//GEN-LAST:event_jMenuItemSwapGoalStartActionPerformed
 
-    private void jCheckBoxMenuItemConnectToVehicleManualActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jCheckBoxMenuItemConnectToVehicleManualActionPerformed
-        if (this.jCheckBoxMenuItemConnectToVehicleManual.isSelected()) {
-            this.splinePanel1.setManualGoal(true);
-            this.splinePanel1.setStartPoints(null);
-            this.splinePanel1.setGoalPoints(null);
-            ConnectToVehicle();
-            this.jCheckBoxMenuItemConnectedToVehicle.setSelected(false);
-            this.jCheckBoxMenuItemConnectedToVehicle.setEnabled(false);
-        } else {
-            DisconnectFromVehicle();
-            this.jCheckBoxMenuItemConnectedToVehicle.setEnabled(true);
+    public void plotSplines() {
+        try {
+            for (PlannedPath path : this.splinePanel1.getPlannedPaths()) {
+                File f = File.createTempFile("spline_", ".csv");
+                PrintStream ps = new PrintStream(new FileOutputStream(f));
+                ps.println("x,y");
+                for (Point2Dd pt : path.getCurvePoints()) {
+                    String s = "" + pt.x + "," + pt.y;
+                    ps.println(s);
+                    System.out.println(s);
+                }
+                ps.close();
+                String args[] = {"--plotVsLineNumber=true", "--FieldSeparator=,", "--cmdLineMode", "--disposeOnClose",
+                    f.getCanonicalPath()};
+                diagapplet.plotter.plotterJFrame.main(args);
+            }
+        } catch (Exception exception) {
+            exception.printStackTrace();
         }
-    }//GEN-LAST:event_jCheckBoxMenuItemConnectToVehicleManualActionPerformed
+    }
+
+    public void plotSplineCurveRadius() {
+        try {
+            for (PlannedPath path : this.splinePanel1.getPlannedPaths()) {
+                File f = File.createTempFile("spline_curve_radius_", ".csv");
+                PrintStream ps = new PrintStream(new FileOutputStream(f));
+                ps.println("dist,dot,radius");
+                Point2Dd last_pt = null;
+                Point2Dd last_diffu = null;
+                for (Point2Dd pt : path.getCurvePoints()) {
+                    double max_radius = 10.0 * this.splinePanel1.getMinTurnRadius();
+                    if (max_radius < 100.0) {
+                        max_radius = 100.0;
+                    }
+                    if (null != last_pt) {
+                        Point2Dd diff = pt.diff(last_pt);
+                        Point2Dd diffu = diff.unit();
+                        double dist = diff.mag();
+                        if (null != last_diffu) {
+                            double dot = diffu.dot(last_diffu);
+                            double radius = max_radius;
+                            if (Math.abs(dot - 1.0) > Double.MIN_NORMAL) {
+                                radius = dist / Math.sqrt(2 * (1 - dot));
+                            }
+                            if (radius > max_radius) {
+                                radius = max_radius;
+                            }
+                            ps.println(dist + "," + dot + "," + radius);
+                        }
+                        last_diffu = diffu;
+                    }
+                    last_pt = pt;
+                }
+                ps.close();
+                String args[] = {"--plotVsLineNumber=true", "--FieldSeparator=,", "--cmdLineMode", "--disposeOnClose",
+                    f.getCanonicalPath()};
+                diagapplet.plotter.plotterJFrame.main(args);
+            }
+        } catch (Exception exception) {
+            exception.printStackTrace();
+        }
+    }
+
+    public void plotSplinesWithControlPoints() {
+        try {
+            for (PlannedPath path : this.splinePanel1.getPlannedPaths()) {
+                File f = File.createTempFile("spline_", ".csv");
+                PrintStream ps = new PrintStream(new FileOutputStream(f));
+                ps.println("x,y");
+                for (Point2Dd pt : path.getCurvePoints()) {
+                    String s = "" + pt.x + "," + pt.y;
+                    ps.println(s);
+                    System.out.println(s);
+                }
+                ps.close();
+                File f2 = File.createTempFile("ctnrl_pts_", ".csv");
+                PrintStream ps2 = new PrintStream(new FileOutputStream(f2));
+                ps2.println("x,y");
+                for (Point2Dd pt : path.getExtendedControlPoints()) {
+                    String s = "" + pt.x + "," + pt.y;
+                    ps2.println(s);
+                    System.out.println(s);
+                }
+                ps2.close();
+                String args[] = {"--plotVsLineNumber=true", "--FieldSeparator=,", "--cmdLineMode", "--disposeOnClose",
+                    f.getCanonicalPath(), f2.getCanonicalPath()};
+                diagapplet.plotter.plotterJFrame.main(args);
+            }
+        } catch (Exception exception) {
+            exception.printStackTrace();
+        }
+    }
 
     public void plotLastCntrlPtsSent() {
         try {
@@ -1695,6 +2050,466 @@ public class SplineTestJFrame extends javax.swing.JFrame {
     private void jCheckBoxShowControlPathActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jCheckBoxShowControlPathActionPerformed
         this.splinePanel1.setShowControlPath(this.jCheckBoxShowControlPath.isSelected());
     }//GEN-LAST:event_jCheckBoxShowControlPathActionPerformed
+
+    private void jMenuItemPlotSplinesWithControlPointsActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItemPlotSplinesWithControlPointsActionPerformed
+        this.plotSplines();
+    }//GEN-LAST:event_jMenuItemPlotSplinesWithControlPointsActionPerformed
+
+    private void jMenuItem2ActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItem2ActionPerformed
+        this.plotSplinesWithControlPoints();
+    }//GEN-LAST:event_jMenuItem2ActionPerformed
+
+    private void jMenuItemPlotCurveRadiusActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItemPlotCurveRadiusActionPerformed
+        this.plotSplineCurveRadius();
+    }//GEN-LAST:event_jMenuItemPlotCurveRadiusActionPerformed
+
+    private void jButtonModifyAngleActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonModifyAngleActionPerformed
+        try {
+            String res = JOptionPane.showInputDialog(this, "Angle for new Goal/Start positions?",
+                    this.splinePanel1.getStartingAngle());
+            if (null != res) {
+                this.splinePanel1.setStartingAngle(Double.valueOf(res.trim()));
+            }
+        } catch (Exception exception) {
+            exception.printStackTrace();
+        }
+        this.updateAngle();
+    }//GEN-LAST:event_jButtonModifyAngleActionPerformed
+
+    private void jRadioButtonWaypointActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jRadioButtonWaypointActionPerformed
+        if (this.jRadioButtonWaypoint.isSelected()) {
+            this.splinePanel1.setDrawMode(SplineDrawMode.WAYPOINT);
+            this.setMoveEnabled(false);
+        }
+        this.updateAngle();
+    }//GEN-LAST:event_jRadioButtonWaypointActionPerformed
+
+    private void jRadioButtonMenuItemGoalFromConnectionActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jRadioButtonMenuItemGoalFromConnectionActionPerformed
+        if (this.jRadioButtonMenuItemGoalFromConnection.isSelected()) {
+            this.splinePanel1.setGoalSource(GoalSourceEnum.CONNECTION);
+        }
+    }//GEN-LAST:event_jRadioButtonMenuItemGoalFromConnectionActionPerformed
+
+    private void jRadioButtonMenuItemManualGoalActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jRadioButtonMenuItemManualGoalActionPerformed
+        if (this.jRadioButtonMenuItemManualGoal.isSelected()) {
+            this.splinePanel1.setGoalSource(GoalSourceEnum.MANUAL);
+        }
+    }//GEN-LAST:event_jRadioButtonMenuItemManualGoalActionPerformed
+
+    private void jRadioButtonMenuItemGoalFromWaypointsActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jRadioButtonMenuItemGoalFromWaypointsActionPerformed
+        if (this.jRadioButtonMenuItemGoalFromWaypoints.isSelected()) {
+            this.splinePanel1.setGoalSource(GoalSourceEnum.WAYPOINTS);
+        }
+    }//GEN-LAST:event_jRadioButtonMenuItemGoalFromWaypointsActionPerformed
+
+    private void jCheckBoxIgnoreBoundariesActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jCheckBoxIgnoreBoundariesActionPerformed
+        this.splinePanel1.setIgnoreBoundaries(this.jCheckBoxIgnoreBoundaries.isSelected());
+    }//GEN-LAST:event_jCheckBoxIgnoreBoundariesActionPerformed
+    BlockingQueue<Integer> manualGoalBlockingQueue = new SynchronousQueue<>();
+    int goal_count = 0;
+    private void jButtonSendManualGoalActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonSendManualGoalActionPerformed
+        goal_count++;
+        try {
+            if (manualGoalBlockingQueue.isEmpty()) {
+                manualGoalBlockingQueue.add(goal_count);
+            }
+        } catch (Exception e) {
+        }
+    }//GEN-LAST:event_jButtonSendManualGoalActionPerformed
+
+    private void jButtonUpActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonUpActionPerformed
+        this.splinePanel1.setStartingAngle(90.0);
+        this.updateAngle();
+    }//GEN-LAST:event_jButtonUpActionPerformed
+
+    private void jButtonDownActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonDownActionPerformed
+        this.splinePanel1.setStartingAngle(270.0);
+        this.updateAngle();
+    }//GEN-LAST:event_jButtonDownActionPerformed
+
+    private void jButtonLeftActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonLeftActionPerformed
+        this.splinePanel1.setStartingAngle(180.0);
+        this.updateAngle();
+    }//GEN-LAST:event_jButtonLeftActionPerformed
+
+    private void jButtonRightActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonRightActionPerformed
+        this.splinePanel1.setStartingAngle(0.0);
+        this.updateAngle();
+    }//GEN-LAST:event_jButtonRightActionPerformed
+
+    private Vector<String> planParamVector = null;
+
+    public Vector<String> getPlanParamVector() {
+        if (null != planParamVector) {
+            return planParamVector;
+        }
+        planParamVector = new Vector<>();
+        Class cls = PlannerInput.class;
+        Field fa[] = cls.getFields();
+        PlannerInput pi = this.splinePanel1.getPlannerInput();
+        for (Field f : fa) {
+            Class type = f.getType();
+            Object val = "";
+            try {
+                val = "=" + f.get(pi).toString();
+            } catch (Exception e) {
+
+            }
+            if (type.isAssignableFrom(Integer.class)) {
+                planParamVector.add(f.getName() + val);
+                continue;
+            }
+            if (type.isAssignableFrom(int.class)) {
+                planParamVector.add(f.getName() + val);
+                continue;
+            }
+            if (type.isAssignableFrom(Float.class)) {
+                planParamVector.add(f.getName() + val);
+                continue;
+            }
+            if (type.isAssignableFrom(float.class)) {
+                planParamVector.add(f.getName() + val);
+                continue;
+            }
+            if (type.isAssignableFrom(Double.class)) {
+                planParamVector.add(f.getName() + val);
+                continue;
+            }
+            if (type.isAssignableFrom(double.class)) {
+                planParamVector.add(f.getName() + val);
+                continue;
+            }
+        }
+        return planParamVector;
+    }
+
+    public ParamRange queryPlanParamRange() {
+        return ParamRangeJPanel.queryParamRange(getPlanParamVector(), this);
+    }
+
+    private ProgressMonitor testProgressMonitor = null;
+
+    class TestTask extends SwingWorker<Void, Void> {
+
+        ProgressMonitor testProgressMonitor = null;
+        ParamRange pr = null;
+        File f = null;
+        boolean orig_replan_on_all_changes = false;
+
+        @Override
+        public Void doInBackground() {
+            setProgress(0);
+
+            PlannerInput pi = splinePanel1.getPlannerInput();
+            List<CarrierState> startPoints = splinePanel1.getStartPoints();
+            List<CarrierState> goalPoints = splinePanel1.getGoalPoints();
+            List<CarrierState> wayPoints = splinePanel1.getWaypoints();
+            try {
+                f = File.createTempFile("planning_test_" + pr.paramName, ".csv");
+                PrintStream ps = new PrintStream(new FileOutputStream(f));
+                ps.println(pr.paramName + ",npoints,ltime,ptime,ttime,points_checked,lsize");
+                for (int i = 0; i < pr.increments; i++) {
+                    double v = pr.min + (pr.max - pr.min) * i / pr.increments;
+                    pi.getClass().getField(pr.paramName).setDouble(pi, v);
+                    long t1 = System.currentTimeMillis();
+                    pi.start = startPoints.get(0);
+                    pi.goal = goalPoints.get(0);
+                    if (null != testProgressMonitor && testProgressMonitor.isCanceled()) {
+                        return null;
+                    }
+                    List<PlannerPoint> ll = Planner.createPlannerList(pi, startPoints, goalPoints, wayPoints);
+                    long t2 = System.currentTimeMillis();
+                    if (null != testProgressMonitor && testProgressMonitor.isCanceled()) {
+                        return null;
+                    }
+                    List<PlannerPoint> newControlPoints = Planner.planWithPlannerList(pi, ll);
+                    long t3 = System.currentTimeMillis();
+                    long ltime = t2 - t1;
+                    long ptime = t3 - t2;
+                    long ttime = t3 - t1;
+                    int npoints = (newControlPoints == null) ? 0 : newControlPoints.size();
+                    int lsize = ll.size();
+                    ps.println(v + "," + npoints + "," + ltime + "," + ptime + "," + ttime + "," + Planner.points_checked + "," + lsize);
+                    setProgress(i);
+                    if (null != testProgressMonitor && testProgressMonitor.isCanceled()) {
+                        return null;
+                    }
+                }
+                ps.close();
+
+            } catch (Exception exception) {
+                exception.printStackTrace();
+            }
+
+            return null;
+        }
+
+        @Override
+        public void done() {
+            try {
+                jCheckBoxMenuItemReplanOnAllChanges.setSelected(orig_replan_on_all_changes);
+                splinePanel1.setReplanOnAllChanges(orig_replan_on_all_changes);
+                testProgressMonitor.close();
+                splinePanel1.running_param_test = false;
+                String args[] = {"--plotVsLineNumber=false", "--FieldSeparator=,", "--cmdLineMode", "--disposeOnClose",
+                    f.getCanonicalPath()};
+                diagapplet.plotter.plotterJFrame.main(args);
+
+            } catch (Exception exception) {
+                exception.printStackTrace();
+            }
+        }
+    }
+
+    private void jMenuItemTestPlanningParamActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItemTestPlanningParamActionPerformed
+        ParamRange pr = queryPlanParamRange();
+        if (null == pr) {
+            return;
+        }
+        System.out.println("Testing " + pr.paramName + " from " + pr.min + " to " + pr.max + " using " + pr.increments + " increments");
+        boolean orig_replan_on_changes = this.jCheckBoxMenuItemReplanOnAllChanges.isSelected();
+        this.jCheckBoxMenuItemReplanOnAllChanges.setSelected(false);
+        this.splinePanel1.setReplanOnAllChanges(false);
+        this.splinePanel1.running_param_test = true;
+        this.splinePanel1.interruptPlanning();
+
+        testProgressMonitor
+                = new ProgressMonitor(this,
+                        "Testing " + pr.paramName + " from " + pr.min + " to " + pr.max + " with " + pr.increments + " increments.",
+                        "", 0, pr.increments);
+        TestTask tt = new TestTask();
+        tt.testProgressMonitor = testProgressMonitor;
+        tt.pr = pr;
+        tt.orig_replan_on_all_changes = orig_replan_on_changes;
+        tt.addPropertyChangeListener(new PropertyChangeListener() {
+
+            @Override
+            public void propertyChange(PropertyChangeEvent evt) {
+                try {
+                    testProgressMonitor.setProgress((Integer) evt.getNewValue());
+                } catch (Exception e) {
+                }
+            }
+        });
+        tt.execute();
+    }//GEN-LAST:event_jMenuItemTestPlanningParamActionPerformed
+
+    private void jCheckBoxMenuItemStaticPlannerListActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jCheckBoxMenuItemStaticPlannerListActionPerformed
+        this.splinePanel1.setUse_static_planner_list(this.jCheckBoxMenuItemStaticPlannerList.isSelected());
+    }//GEN-LAST:event_jCheckBoxMenuItemStaticPlannerListActionPerformed
+
+    private void jRadioButtonDrawPlanningRectActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jRadioButtonDrawPlanningRectActionPerformed
+        if (this.jRadioButtonDrawPlanningRect.isSelected()) {
+            this.splinePanel1.setDrawMode(SplineDrawMode.DRAW_PLANNING_RECT);
+        }
+    }//GEN-LAST:event_jRadioButtonDrawPlanningRectActionPerformed
+
+    private void jCheckBoxMenuItemRecordPlannerStatsActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jCheckBoxMenuItemRecordPlannerStatsActionPerformed
+        Planner.record_stats = this.jCheckBoxMenuItemRecordPlannerStats.isSelected();
+    }//GEN-LAST:event_jCheckBoxMenuItemRecordPlannerStatsActionPerformed
+
+    private void jMenuItemPlotRecordedPlannerStatsActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItemPlotRecordedPlannerStatsActionPerformed
+
+        try {
+            File f = Planner.recordStatsFile;
+            if (null != f) {
+                String args[] = {"--plotVsLineNumber=true", "--FieldSeparator=,", "--cmdLineMode", "--disposeOnClose",
+                    f.getCanonicalPath()};
+                diagapplet.plotter.plotterJFrame.main(args);
+            }
+        } catch (Exception exception) {
+            exception.printStackTrace();
+        }
+    }//GEN-LAST:event_jMenuItemPlotRecordedPlannerStatsActionPerformed
+
+    class TestAllPositionsTask extends SwingWorker<Void, Void> {
+
+        final ProgressMonitor testProgressMonitor;
+        final boolean orig_replan_on_all_changes;
+        final boolean orig_planner_recordStats;
+        final Rectangle2Dd rect;
+        final int num_tests;
+        final int seed;
+        final double plannerPointSize;
+        final double width;
+        final double front;
+        final double back;
+
+        TestAllPositionsTask(ProgressMonitor _testProgressMonitor,
+                boolean _orig_replan_on_all_changes,
+                boolean _orig_planner_recordStats,
+                Rectangle2Dd _rect,
+                int _num_tests,
+                int _seed,
+                double _plannerPointSize,
+                double _width,
+                double _front,
+                double _back) {
+            super();
+            this.testProgressMonitor = _testProgressMonitor;
+            this.orig_replan_on_all_changes = _orig_replan_on_all_changes;
+            this.orig_planner_recordStats = _orig_planner_recordStats;
+            this.rect = _rect;
+            this.num_tests = _num_tests;
+            this.seed = _seed;
+            this.plannerPointSize = _plannerPointSize;
+            this.width = _width;
+            this.front = _front;
+            this.back = _back;
+        }
+
+        @Override
+        public Void doInBackground() {
+            setProgress(0);
+            PlannerInput pi = splinePanel1.getPlannerInput();
+            List<CarrierState> startPoints = splinePanel1.getStartPoints();
+            List<CarrierState> goalPoints = splinePanel1.getGoalPoints();
+            List<CarrierState> wayPoints = splinePanel1.getWaypoints();
+            try {
+                Planner.closeRecordStatsFile();
+                Random r = new Random(seed);
+                for (int i = 0; i < num_tests; i++) {
+                    Planner.record_stats = true;
+                    pi.start = null;
+                    while (pi.start == null) {
+                        pi.start = new CarrierState(r.nextDouble() * rect.width + rect.x,
+                                r.nextDouble() * rect.height + rect.y,
+                                new AngleD(r.nextDouble() * Math.PI * 2),
+                                CarrierStateTypeEnum.START,
+                                plannerPointSize,
+                                width,
+                                front,
+                                back);
+                        if (pi.start.checkBoundaries(splinePanel1.getBoundaries())) {
+                            pi.start = null;
+                            continue;
+                        }
+                        if (pi.start.checkObstacles(splinePanel1.getObstacles())) {
+                            pi.start = null;
+                        }
+                    }
+                    pi.goal = null;
+                    while (pi.goal == null) {
+                        pi.goal = new CarrierState(r.nextDouble() * rect.width + rect.x,
+                                r.nextDouble() * rect.height + rect.y,
+                                new AngleD(r.nextDouble() * Math.PI * 2),
+                                CarrierStateTypeEnum.GOAL,
+                                plannerPointSize,
+                                width,
+                                front,
+                                back);
+                        if (pi.goal.checkBoundaries(splinePanel1.getBoundaries())) {
+                            pi.goal = null;
+                            continue;
+                        }
+                        if (pi.goal.checkObstacles(splinePanel1.getObstacles())) {
+                            pi.goal = null;
+                        }
+                    }
+                    pi.start.setGoal(pi.goal);
+                    if (null != testProgressMonitor && testProgressMonitor.isCanceled()) {
+                        return null;
+                    }
+                    List<PlannerPoint> ll = Planner.createPlannerList(pi, startPoints, goalPoints, wayPoints);
+                    long t2 = System.currentTimeMillis();
+                    if (null != testProgressMonitor && testProgressMonitor.isCanceled()) {
+                        return null;
+                    }
+                    List<PlannerPoint> newControlPoints = Planner.planWithPlannerList(pi, ll);
+                    final List<PlannerPoint> fll = ll;
+                    final List<PlannerPoint> fcp = newControlPoints;
+                    final CarrierState fstart = pi.start;
+                    final CarrierState fgoal = pi.goal;
+                    java.awt.EventQueue.invokeLater(new Runnable() {
+
+                        @Override
+                        public void run() {
+                            splinePanel1.updatePlannerInfo(fstart, fgoal, fll, fcp);
+                            splinePanel1.repaint();
+                        }
+                    });
+
+                    setProgress(i);
+                    if (null != testProgressMonitor && testProgressMonitor.isCanceled()) {
+                        return null;
+                    }
+                }
+
+            } catch (Exception exception) {
+                exception.printStackTrace();
+            }
+
+            return null;
+        }
+
+        @Override
+        public void done() {
+            try {
+                jCheckBoxMenuItemReplanOnAllChanges.setSelected(orig_replan_on_all_changes);
+                splinePanel1.setReplanOnAllChanges(orig_replan_on_all_changes);
+                Planner.record_stats = this.orig_planner_recordStats;
+                jCheckBoxMenuItemRecordPlannerStats.setSelected(Planner.record_stats);
+                testProgressMonitor.close();
+                splinePanel1.running_param_test = false;
+                String args[] = {"--plotVsLineNumber=false", "--FieldSeparator=,", "--cmdLineMode", "--disposeOnClose",
+                    Planner.recordStatsFile.getCanonicalPath()};
+                diagapplet.plotter.plotterJFrame.main(args);
+
+            } catch (Exception exception) {
+                exception.printStackTrace();
+            }
+        }
+    }
+
+    private void jMenuItemTestAllPositonsActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jMenuItemTestAllPositonsActionPerformed
+        boolean orig_replan_on_changes = this.jCheckBoxMenuItemReplanOnAllChanges.isSelected();
+        boolean orig_planner_recordStats = Planner.record_stats;
+        Planner.record_stats = true;
+        jCheckBoxMenuItemRecordPlannerStats.setSelected(true);
+
+        this.jCheckBoxMenuItemReplanOnAllChanges.setSelected(false);
+        this.splinePanel1.setReplanOnAllChanges(false);
+        this.splinePanel1.running_param_test = true;
+        this.splinePanel1.interruptPlanning();
+        Rectangle2Dd rect = this.splinePanel1.getPlanningAreaRect();
+        if (null == rect) {
+            rect = this.splinePanel1.getBoundingRect();
+        }
+        testProgressMonitor
+                = new ProgressMonitor(this,
+                        "Testing All Positions",
+                        "", 0, 1000);
+        TestAllPositionsTask tt = new TestAllPositionsTask(testProgressMonitor,
+                orig_replan_on_changes,
+                orig_planner_recordStats,
+                rect,
+                1000,
+                1111,
+                this.splinePanel1.getPlannerPointDisplaySize(),
+                this.splinePanel1.getVehicleWidth(),
+                this.splinePanel1.getVehicleFront(),
+                this.splinePanel1.getVehicleBack());
+
+        tt.addPropertyChangeListener(new PropertyChangeListener() {
+
+            @Override
+            public void propertyChange(PropertyChangeEvent evt) {
+                try {
+                    testProgressMonitor.setProgress((Integer) evt.getNewValue());
+                } catch (Exception e) {
+                }
+            }
+        });
+        tt.execute();
+    }//GEN-LAST:event_jMenuItemTestAllPositonsActionPerformed
+
+    public void updateAngle() {
+        try {
+            this.jLabelAngle.setText(String.format(" Angle(in degrees): %.1f ", this.splinePanel1.getStartingAngle()));
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
     Thread monitorVehicleThread = null;
     Socket socket_to_vehicle = null;
     private byte obsDetectBa[] = null;
@@ -1704,6 +2519,36 @@ public class SplineTestJFrame extends javax.swing.JFrame {
     private final SocketAddress obsAddress = new InetSocketAddress(5555);
     List<List<Obstacle>> obsHistory = null;
     Map<List<Obstacle>, Double> obsTimeStamps = null;
+    List<Obstacle> lastObsList = null;
+
+    public boolean MatchObsList(List<Obstacle> newObsList) {
+        if (lastObsList == null) {
+            return newObsList == null || newObsList.size() == 0;
+        }
+        if (lastObsList.size() != newObsList.size()) {
+            return false;
+        }
+        for (int i = 0; i < lastObsList.size(); i++) {
+            double min_diff = Double.POSITIVE_INFINITY;
+            Obstacle obsi = lastObsList.get(i);
+            double min_dist_radius = Double.POSITIVE_INFINITY;
+            for (int j = 0; j < newObsList.size(); j++) {
+                Obstacle obsj = newObsList.get(j);
+                double diff = obsi.distance(obsj);
+                if (diff < min_diff) {
+                    min_diff = diff;
+                    min_dist_radius = obsj.radius;
+                }
+            }
+            if (min_diff > 20.0) {
+                return false;
+            }
+            if (Math.abs(obsi.radius - min_dist_radius) > 20.0) {
+                return false;
+            }
+        }
+        return true;
+    }
 
     public void ReadFromObsDetect() {
         try {
@@ -1755,8 +2600,22 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                     float vx = bb.getFloat();
                     float vy = bb.getFloat();
                     float radius = bb.getFloat();
-                    Obstacle new_obs =
-                            new Obstacle(x * 100.0, y * 100.0, radius * 100.0);
+                    if (radius < Float.MIN_NORMAL) {
+                        continue;
+                    }
+                    Obstacle new_obs
+                            = new Obstacle(x * 100.0, y * 100.0, radius * 100.0);
+                    List<CarrierState> spl = this.splinePanel1.getStartPoints();
+                    boolean skip_obs = false;
+                    for (CarrierState sp : spl) {
+                        if (sp.checkObstacleEx(new_obs, 50.)) {
+                            skip_obs = true;
+                            break;
+                        }
+                    }
+                    if (skip_obs) {
+                        continue;
+                    }
                     newObsList.add(new_obs);
                 }
 
@@ -1787,18 +2646,27 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                             i--;
                         }
                     }
-                    java.awt.EventQueue.invokeLater(new Runnable() {
-                        @Override
-                        public void run() {
-                            splinePanel1.setObstacles(newObsList);
-                            splinePanel1.replan();
-                        }
-                    });
+                    obsDetectSocket.close();
+                    if (!checking_vehicle && !MatchObsList(newObsList)) {
+                        lastObsList = newObsList;
+                        java.awt.EventQueue.invokeAndWait(new Runnable() {
+                            @Override
+                            public void run() {
+                                splinePanel1.setObstacles(newObsList);
+                                splinePanel1.replan();
+                            }
+                        });
+                    }
+                    obsDetectSocket = new DatagramSocket(5555);
+                    this.obsDetectSocket.setReuseAddress(true);
+                    obsDetectBa = new byte[1024];
+                    obsDetectPacket = new DatagramPacket(obsDetectBa, obsDetectBa.length);
                 }
-                this.obsDetectSocket.close();
-                this.obsDetectSocket = new DatagramSocket(5555);
-                this.obsDetectSocket.setReuseAddress(true);
-                Thread.sleep(100);
+
+//                this.obsDetectSocket.close();
+//                this.obsDetectSocket = new DatagramSocket(5555);
+//                this.obsDetectSocket.setReuseAddress(true);
+                Thread.sleep(300);
             }
         } catch (Exception e) {
             e.printStackTrace();
@@ -1807,6 +2675,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
 
     public void ConnectToObsDetection() {
         try {
+            this.lastObsList = null;
             this.DisconnectFromObsDetectionInner();
             obsDetectSocket = new DatagramSocket(5555);
             if (this.debugObsDetComm) {
@@ -1832,7 +2701,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
 
     public void DisconnectFromObsDetectionInner() {
         try {
-
+            this.lastObsList = null;
             if (null != this.obsDetectThread) {
                 this.obsDetectThread.interrupt();
                 if (null != this.obsDetectSocket) {
@@ -1858,6 +2727,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
         if (this.jCheckBoxMenuItemConnectToObsDetect.isSelected()) {
             this.jCheckBoxMenuItemConnectToObsDetect.setSelected(false);
         }
+        this.lastObsList = null;
     }
 
     public static void printByteArray(byte ba[]) {
@@ -1881,21 +2751,28 @@ public class SplineTestJFrame extends javax.swing.JFrame {
     }
 
     public void ShowError(final String s) {
-        System.out.println("");
-        System.out.flush();
-        System.err.println(s);
-        java.awt.EventQueue.invokeLater(new Runnable() {
-            @Override
-            public void run() {
-                ShowMessageBox(s);
-            }
-        });
+        try {
+            System.out.println("");
+            System.out.flush();
+            System.err.println(s);
+            java.awt.EventQueue.invokeAndWait(new Runnable() {
+                @Override
+                public void run() {
+                    ShowMessageBox(s);
+                }
+            });
+        } catch (InterruptedException interruptedException) {
+        } catch (InvocationTargetException invocationTargetException) {
+        }
     }
     byte last_cntrl_pts_sent_ba[] = null;
     Point2Dd lastGoal;
 
     public boolean sendControlPoints(Socket socket,
-            List<? extends Point2Dd> cntrlPts,
+            final CarrierState csStart,
+            final CarrierState csEnd,
+            final List<PlannerPoint> cntrlPts,
+            final List<PlannerPoint> planner_list,
             boolean crab,
             int segsx, int segsy, short segsangle,
             int segex, int segey, short segeangle,
@@ -1913,18 +2790,18 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                 return false;
             }
             int num_pts = cntrlPts.size();
-            if (num_pts < 2) {
+            if (num_pts < 4) {
                 ShowError("sendControlPoints : num_pts too few: " + num_pts);
                 return false;
             }
-            if (num_pts > 15) {
+            if (num_pts > 16) {
                 ShowError("sendControlPoints : num_pts too many: " + num_pts);
                 return false;
             }
             if (cntrlPts.get(0).distance(cntrlPts.get(num_pts - 1)) < 10) {
                 return false;
             }
-            int bbsz = 44 + num_pts * 8;
+            int bbsz = 28 + num_pts * 8;
             double start_seg = this.splinePanel1.getSegStartLength() * 10.0;
 
             //start_seg = 10.0;
@@ -1940,6 +2817,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
             bb.putShort((short) bbsz);
             if (this.splinePanel1.isCrab()) {
                 bb.putShort((short) 2); // send crab spline
+                segeangle = segsangle;
             } else {
                 bb.putShort((short) 1); // send normal spline
             }
@@ -1960,7 +2838,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                 ss = diffu.y;
                 cs = diffu.x;
             }
-            if (false && this.splinePanel1.isManualGoal()
+            if (false && (this.splinePanel1.getGoalSource() == GoalSourceEnum.MANUAL)
                     && null != this.last_three_pts_sent
                     && Math.abs(segsx - this.last_three_pts_sent[2]) < 20
                     && Math.abs(segsy - this.last_three_pts_sent[3]) < 20) {
@@ -1975,7 +2853,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                 bb.putInt(segsx + (int) (cs * start_seg));
                 bb.putInt(segsy + (int) (ss * start_seg));
             }
-            for (int i = 1; i < num_pts - 1; i++) {
+            for (int i = 2; i < num_pts - 2; i++) {
                 Point2Dd pt = cntrlPts.get(i);
                 int xi = (int) (pt.x * 10.0);
                 int yi = (int) (pt.y * 10.0);
@@ -2008,6 +2886,44 @@ public class SplineTestJFrame extends javax.swing.JFrame {
             bb.putInt(this.last_three_pts_sent[5]);
 
             byte ba[] = bb.array();
+            final byte[] final_ba = ba;
+            final OutputStream final_os = os;
+            final JFrame frm = this;
+            if (debugVehicleComm) {
+                System.out.println("bb = " + bb);
+                System.out.println("bb.position() = " + bb.position());
+                System.out.println("ba = " + ba);
+                System.out.println("ba:");
+                printByteArray(ba);
+                System.out.println("");
+                System.out.println("ba.length = " + ba.length);
+                System.out.println("bbsz = " + bbsz);
+            }
+            if (this.jCheckBoxMenuItemConfirmControlPoints.isSelected()) {
+                final LinkedBlockingQueue<Integer> q = new LinkedBlockingQueue<>();
+                java.awt.EventQueue.invokeLater(new Runnable() {
+                    @Override
+                    public void run() {
+                        splinePanel1.updatePlannerInfo(csStart, csEnd, planner_list, cntrlPts);
+                        int result = JOptionPane.showConfirmDialog(frm, "Send Control Points?", frm.getTitle() + ": Send control points?",
+                                JOptionPane.YES_NO_OPTION);
+                        boolean put_done = false;
+                        while (!put_done) {
+                            try {
+                                q.put(result);
+                                put_done = true;
+                            } catch (InterruptedException interruptedException) {
+                            }
+                        }
+                    }
+                });
+                if (q.take() != JOptionPane.YES_OPTION) {
+                    if (this.splinePanel1.getGoalSource() == GoalSourceEnum.MANUAL) {
+                        this.splinePanel1.setGoalPoints(null);
+                    }
+                    return false;
+                }
+            }
             os.write(ba);
             this.last_cntrl_pts_sent_ba = ba;
             if (debugVehicleComm) {
@@ -2079,6 +2995,9 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                     return;
                 }
                 Thread.sleep(500);
+                if (null == monitorVehicleThread) {
+                    return;
+                }
                 if (monitorVehicleThread.isInterrupted()) {
                     return;
                 }
@@ -2141,7 +3060,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
         if (returnvalue == lastreturnvalue && state == laststate && segid == lastsegid) {
             return;
         }
-        String s = "Status : ";
+        String s = "Vehicle Status : ";
         switch (returnvalue) {
             case 0:
                 break;
@@ -2180,12 +3099,16 @@ public class SplineTestJFrame extends javax.swing.JFrame {
         }
         s += " segid=" + segid;
         s += " count=" + this.sendControlPointsCount;
-        this.jLabelStatus.setText(s);
+        this.jLabelVehicleStatus.setText(s);
         this.lastreturnvalue = returnvalue;
         this.laststate = state;
         this.lastsegid = segid;
     }
     int lastGoalId = -1;
+
+    private static CarrierState cs0 = null;
+    CarrierState unsentGoal = null;
+    boolean checking_vehicle = false;
 
     public boolean CheckVehicle() throws InterruptedException {
         ByteBuffer bb = null;
@@ -2194,13 +3117,13 @@ public class SplineTestJFrame extends javax.swing.JFrame {
         int segsx = 0;
         int segsy = 0;
         double sangle = 0.0;
-        boolean manualGoal = this.splinePanel1.isManualGoal();
         double vehicle_width = this.splinePanel1.getVehicleWidth();
         double vehicle_front = this.splinePanel1.getVehicleFront();
         double vehicle_back = this.splinePanel1.getVehicleBack();
         double planner_point_size = this.splinePanel1.getPlannerPointDisplaySize();
         try {
 
+            this.splinePanel1.setMaxCntrlPts(15);
             debugVehicleComm = this.splinePanel1.isDebugVehicleComm();
             this.reconnect();
             this.splinePanel1.incrementDelayReplanCount();
@@ -2299,25 +3222,43 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                     if (debugVehicleComm) {
                         System.out.println("segeangle = " + segeangle);
                     }
-                    double segStartLength = this.splinePanel1.getSegStartLength();
                     sangle = Math.toRadians(segsangle / 100.0);
                     double eangle = Math.toRadians(segeangle / 100.0);
                     PlannerInput pi = new PlannerInput();
+                    pi.segStartLength = this.splinePanel1.getSegStartLength();
                     pi.reverse = this.splinePanel1.isReverse();
-                    final CarrierState cs0 = new CarrierState(segsx / 10.0,
-                            segsy / 10.0,
-                            new AngleD(Math.toRadians(segsangle / 100.0)),
-                            CarrierStateTypeEnum.START,
-                            planner_point_size,
-                            vehicle_width,
-                            vehicle_front,
-                            vehicle_back);
-                    if (manualGoal) {
+                    if (null == cs0 || Math.abs(cs0.x - segsx / 10.0) > 1.0 || Math.abs(cs0.y - segsy / 10.0) > 1.0
+                            || Math.abs(cs0.getAngle().getValue() - Math.toRadians(segsangle / 100.0)) > 0.1) {
+                        cs0 = new CarrierState(segsx / 10.0,
+                                segsy / 10.0,
+                                new AngleD(Math.toRadians(segsangle / 100.0)),
+                                CarrierStateTypeEnum.START,
+                                planner_point_size,
+                                vehicle_width,
+                                vehicle_front,
+                                vehicle_back);
+                    }
+                    CarrierState nextGoal = null;
+                    GoalSourceEnum goalSource = this.splinePanel1.getGoalSource();
+                    pi.crab = this.splinePanel1.isCrab();
+                    if (goalSource == GoalSourceEnum.MANUAL) {
+                        if (pi.crab) {
+                            this.splinePanel1.setStartingAngle(Math.toDegrees(cs0.getAngle().getValue()));
+                            this.updateAngle();
+                        }
+                        splinePanel1.setGoalPoints(null);
+                        splinePanel1.updatePlannerInfo(cs0, this.unsentGoal, null, null);
+                        this.jButtonSendManualGoal.setEnabled(true);
+                        int goal_count = this.manualGoalBlockingQueue.take();
+                        checking_vehicle = true;
+                        pi.segStartLength = this.splinePanel1.getSegStartLength();
+                        pi.reverse = this.splinePanel1.isReverse();
+                        pi.crab = this.splinePanel1.isCrab();
+                        this.jButtonSendManualGoal.setEnabled(false);
                         List<CarrierState> goalPoints = this.splinePanel1.getGoalPoints();
                         if (goalPoints == null || goalPoints.size() < 1) {
                             if (debugVehicleComm) {
                                 System.out.println("No manually set goal point");
-
                             }
                             setStatusLabel(returnvalue, state, segi);
                             java.awt.EventQueue.invokeLater(new Runnable() {
@@ -2328,6 +3269,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                             });
                             break;
                         } else {
+                            checking_vehicle = true;
                             CarrierState curGoal = goalPoints.get(0);
                             if (null == curGoal) {
                                 if (debugVehicleComm) {
@@ -2358,67 +3300,98 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                             } else {
                                 segex = (short) (curGoal.x * 10.0);
                                 segey = (short) (curGoal.y * 10.0);
+
                                 segeangle = (short) (Math.toDegrees(curGoal.getAngle().getValue()) * 100.0);
+                                if (curGoal.isReverse()) {
+                                    segeangle = (short) ((segeangle + 18000) % 36000);
+                                }
                                 eangle = Math.toRadians(segeangle / 100.0);
+                                nextGoal = curGoal;
                             }
+                        }
+                    } else if (goalSource == GoalSourceEnum.WAYPOINTS) {
+                        double min_dist = Double.POSITIVE_INFINITY;
+                        CarrierState closestStartPt = null;
+//                        List<CarrierState> startPoints = this.splinePanel1.getStartPoints();
+//                        for (CarrierState sp : startPoints) {
+//                            if (null != sp.getGoal()) {
+//                                double dist = sp.distance(cs0) + Planner.chord(sp.unit(), cs0.unit(),
+//                                        this.splinePanel1.getMinTurnRadius() + this.splinePanel1.getPlannerResolution());
+//                                if (dist < min_dist) {
+//                                    closestStartPt = sp;
+//                                    min_dist = dist;
+//                                }
+//                            }
+//                        }
+                        List<CarrierState> waypoints = this.splinePanel1.getWaypoints();
+                        for (CarrierState wp : waypoints) {
+                            if (null != wp.getGoal()) {
+                                double dist = wp.distance(cs0) + Planner.chord(wp.unit(), cs0.unit(),
+                                        this.splinePanel1.getMinTurnRadius() + this.splinePanel1.getPlannerResolution());
+                                if (dist < min_dist) {
+                                    closestStartPt = wp;
+                                    min_dist = dist;
+                                }
+                            }
+                        }
+                        if (null != closestStartPt) {
+                            CarrierState curGoal = closestStartPt.getGoal();
+                            segex = (short) (curGoal.x * 10.0);
+                            segey = (short) (curGoal.y * 10.0);
+                            segeangle = (short) (Math.toDegrees(curGoal.getAngle().getValue()) * 100.0);
+                            eangle = Math.toRadians(segeangle / 100.0);
                         }
                     }
                     Point2Dd spt = new Point2Dd(segsx / 10.0, segsy / 10.0);
                     Point2Dd ept = new Point2Dd(segex / 10.0, segey / 10.0);
                     Point2Dd end_to_start = ept.diff(spt);
-                    if (!pi.crab) {
+                    if (!pi.crab && goalSource != GoalSourceEnum.MANUAL) {
                         Point2Dd start_vecu = new Point2Dd(Math.cos(sangle), Math.sin(sangle));
                         Point2Dd end_vecu = new Point2Dd(Math.cos(eangle), Math.sin(eangle));
-                        if (!pi.reverse && start_vecu.dot(end_to_start) < 0 && end_vecu.dot(end_to_start) < 0) {
+                        Point2Dd end_to_startu = end_to_start.unit();
+                        if (!pi.reverse && start_vecu.dot(end_to_startu) < -0.01 && end_vecu.dot(end_to_startu) < -0.01) {
                             this.splinePanel1.setReverse(true);
                             this.jCheckBoxReverse.setSelected(true);
                             pi.reverse = true;
-                        } else if (pi.reverse && start_vecu.dot(end_to_start) > 0 && end_vecu.dot(end_to_start) > 0) {
+                        } else if (pi.reverse && start_vecu.dot(end_to_startu) > 0.01 && end_vecu.dot(end_to_startu) > 0.01) {
                             this.splinePanel1.setReverse(false);
                             this.jCheckBoxReverse.setSelected(false);
                             pi.reverse = false;
                         }
                     }
-                    if (!pi.crab && pi.reverse) {
-                        segStartLength = -1.0 * segStartLength;
-                    }
                     if (pi.crab) {
                         sangle = Math.atan2(end_to_start.y, end_to_start.x);
                     }
-                    final CarrierState csStart = new CarrierState(segsx / 10.0 + segStartLength * Math.cos(sangle),
-                            segsy / 10.0 + segStartLength * Math.sin(sangle),
-                            new AngleD(Math.toRadians(segsangle / 100.0)),
-                            CarrierStateTypeEnum.START,
-                            planner_point_size,
-                            vehicle_width,
-                            vehicle_front,
-                            vehicle_back);
-
-                    if (pi.crab) {
-                        eangle = Math.atan2(end_to_start.y, end_to_start.y);
-                    }
-                    final CarrierState csEnd = new CarrierState(segex / 10.0 - segStartLength * Math.cos(eangle),
-                            segey / 10.0 - segStartLength * Math.sin(eangle),
-                            new AngleD(eangle),
-                            CarrierStateTypeEnum.GOAL,
-                            planner_point_size,
-                            vehicle_width,
-                            vehicle_front,
-                            vehicle_back);
-//                    final CarrierState csg = new CarrierState(segex / 10.0,
-//                            segey / 10.0,
-//                            new AngleD(eangle),
-//                            CarrierStateTypeEnum.GOAL,
+                    final CarrierState csStart = cs0;
+//                    new CarrierState(segsx / 10.0 /* + segStartLength * Math.cos(sangle) */,
+//                            segsy / 10.0 /* + segStartLength * Math.sin(sangle) */,
+//                            new AngleD(Math.toRadians(segsangle / 100.0)),
+//                            CarrierStateTypeEnum.START,
 //                            planner_point_size,
 //                            vehicle_width,
 //                            vehicle_front,
 //                            vehicle_back);
+
+                    if (pi.crab) {
+                        eangle = Math.atan2(end_to_start.y, end_to_start.y);
+                    }
+                    if (nextGoal == null) {
+                        nextGoal = new CarrierState(segex / 10.0 /* - segStartLength * Math.cos(eangle) */,
+                                segey / 10.0 /* - segStartLength * Math.sin(eangle) */,
+                                new AngleD(Math.toRadians(segeangle / 100.0)),
+                                CarrierStateTypeEnum.GOAL,
+                                planner_point_size,
+                                vehicle_width,
+                                vehicle_front,
+                                vehicle_back);
+                    }
+                    final CarrierState csEnd = nextGoal;
                     csStart.setGoal(csEnd);
                     Point2Dd goalToLastGoal = null;
                     if (null != lastGoal) {
                         goalToLastGoal = csEnd.diff(lastGoal);
                     }
-                    if (manualGoal && end_to_start.mag() < 10.0) {
+                    if (goalSource == GoalSourceEnum.MANUAL && end_to_start.mag() < 10.0) {
                         if (debugVehicleComm) {
                             System.out.println("end_to_start.mag() = " + end_to_start.mag());
                         }
@@ -2431,7 +3404,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                         });
                         break;
                     }
-                    if (manualGoal && goalToLastGoal != null && goalToLastGoal.mag() < 10.0) {
+                    if (goalSource == GoalSourceEnum.MANUAL && goalToLastGoal != null && goalToLastGoal.mag() < 10.0) {
                         if (debugVehicleComm) {
                             System.out.println("startToLastGoal = " + goalToLastGoal);
                             System.out.println("startToLastGoal.mag() = " + end_to_start.mag());
@@ -2441,13 +3414,6 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                             @Override
                             public void run() {
                                 splinePanel1.updatePlannerInfo(cs0, null, null, null);
-//                            DisconnectFromVehicle();
-//                            jCheckBoxMenuItemConnectedToVehicle.setSelected(false);
-//                            int c = JOptionPane.showConfirmDialog(jf, "Spline sent. Send another?");
-//                            if(c == JOptionPane.YES_OPTION) {
-//                                ConnectToVehicle();
-//                                jCheckBoxMenuItemConnectedToVehicle.setSelected(true);
-//                            }
                             }
                         });
                         break;
@@ -2455,7 +3421,11 @@ public class SplineTestJFrame extends javax.swing.JFrame {
 
                     pi.back = vehicle_back;
                     pi.front = vehicle_front;
-                    pi.boundaries = this.splinePanel1.getBoundaries();
+                    if (this.splinePanel1.isIgnoreBoundaries()) {
+                        pi.boundaries = null;
+                    } else {
+                        pi.boundaries = this.splinePanel1.getBoundaries();
+                    }
                     pi.obstacles = this.splinePanel1.getObstacles();
                     pi.crab = this.splinePanel1.isCrab();
 
@@ -2465,45 +3435,60 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                     pi.veh_width = this.splinePanel1.getVehicleWidth();
                     pi.max_pt2pt_dist = this.splinePanel1.getMax_pt2pt_dist();
                     pi.plannerResolution = this.splinePanel1.getPlannerResolution();
-                    pi.max_cntrl_pts = 15;
+                    pi.max_cntrl_pts = this.splinePanel1.getMaxCntrlPts();
+                    pi.min_turn_radius = this.splinePanel1.getMinTurnRadius();
+                    pi.max_turn_angle_degrees = this.splinePanel1.getMaxTurnAngleDegrees();
+                    pi.planningHorizon = this.splinePanel1.getPlanningHorizon();
                     double start_to_goal_dist = pi.start.distance(pi.goal);
                     if (pi.max_pt2pt_dist < start_to_goal_dist / 7.0) {
                         pi.max_pt2pt_dist = start_to_goal_dist / 7.0;
                         System.out.println("pi.max_pt2pt_dist = " + pi.max_pt2pt_dist);
+                        this.splinePanel1.setMaxCntrlPts(pi.max_cntrl_pts);
                     }
-                    final List<PlannerPoint> planner_list = Planner.createPlannerList(pi, null, null);
-                    final List<PlannerPoint> cntrlPts = Planner.planWithPlannerList(pi, planner_list);
+                    List<PlannerPoint> tmp_cntrlPts = null;
+                    List<PlannerPoint> tmp_planner_list = null;
+                    if (csStart.getPath() != null
+                            && csStart.getPath().getControlPoints() != null
+                            && csStart.getPlannerList() != null) {
+                        tmp_cntrlPts = csStart.getPath().getControlPoints();
+                        tmp_planner_list = csStart.getPlannerList();
+                    } else {
+                        java.awt.EventQueue.invokeAndWait(new Runnable() {
+                            @Override
+                            public void run() {
+                                splinePanel1.updatePlannerInfo(csStart, csEnd, null, null);
+                            }
+                        });
+                        tmp_planner_list = Planner.createPlannerList(pi, splinePanel1.getStartPoints(), splinePanel1.getGoalPoints(), splinePanel1.getWaypoints());
+                        tmp_cntrlPts = Planner.planWithPlannerList(pi, tmp_planner_list);
+                    }
+                    final List<PlannerPoint> cntrlPts = tmp_cntrlPts;
+                    final List<PlannerPoint> planner_list = tmp_planner_list;
                     boolean sendCtrlPtsOk = false;
                     if (null != cntrlPts && cntrlPts.size() > 0) {
-                        short speed_mm_s = 500;
+                        short speed_mm_s = (short) (10.0 * this.splinePanel1.getSpeed());
                         if (pi.reverse && !pi.crab) {
-                            speed_mm_s = (short) -500;
+                            speed_mm_s = (short) (-1 * speed_mm_s);
                         }
-                        sendCtrlPtsOk =
-                                sendCtrlPtsOk = sendControlPoints(s, cntrlPts, pi.crab,
-                                segsx, segsy, segsangle,
-                                segex, segey, segeangle,
-                                segi,
-                                speed_mm_s);
-//                        if (!sendCtrlPtsOk) {
-//                            sendCtrlPtsOk = sendControlPoints(os,
-//                                    Arrays.asList(csStart, csEnd),
-//                                    segsangle,
-//                                    segeangle,
-//                                    (short) 200);
-//                            if (!sendCtrlPtsOk) {
-//                                throw new RuntimeException("Can't send control points.");
-//                            }
-//                        }
-//                        if (!sendCtrlPtsOk) {
-//                            throw new RuntimeException("Can't send control points.");
-//                        }
+                        sendCtrlPtsOk
+                                = sendCtrlPtsOk = sendControlPoints(s, csStart,
+                                        csEnd,
+                                        cntrlPts,
+                                        planner_list,
+                                        pi.crab,
+                                        segsx, segsy, segsangle,
+                                        segex, segey, segeangle,
+                                        segi,
+                                        speed_mm_s);
+                    } else {
+                        this.splinePanel1.setGoalPoints(null);
                     }
                     os.close();
                     is.close();
                     s.close();
                     this.socket_to_vehicle.close();
                     this.socket_to_vehicle = null;
+                    final JFrame jf = this;
                     if (sendCtrlPtsOk) {
                         last_sent_seg_id = segi;
                         saveControlPoints(cntrlPts);
@@ -2514,23 +3499,44 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                                 cntrlPts));
                         lastGoal = new Point2Dd(csEnd.x, csEnd.y);
                         lastGoalId = csEnd.getId();
-                        csEnd.getId();
+                        java.awt.EventQueue.invokeAndWait(new Runnable() {
+                            @Override
+                            public void run() {
+                                splinePanel1.updatePlannerInfo(csStart, csEnd, planner_list, cntrlPts);
+                            }
+                        });
+                        this.unsentGoal = null;
                     }
-                    final JFrame jf = this;
-                    java.awt.EventQueue.invokeLater(new Runnable() {
-                        @Override
-                        public void run() {
-                            splinePanel1.updatePlannerInfo(csStart, csEnd, planner_list, cntrlPts);
-//                            DisconnectFromVehicle();
-//                            jCheckBoxMenuItemConnectedToVehicle.setSelected(false);
-//                            int c = JOptionPane.showConfirmDialog(jf, "Spline sent. Send another?");
-//                            if(c == JOptionPane.YES_OPTION) {
-//                                ConnectToVehicle();
-//                                jCheckBoxMenuItemConnectedToVehicle.setSelected(true);
-//                            }
-                        }
-                    });
-
+                    checking_vehicle = false;
+                    if (null == cntrlPts || cntrlPts.size() < 1) {
+                        final String sm = "Goal is not reachable. " + csEnd + " from " + csStart + ":retry?";
+                        System.out.println(sm);
+                        java.awt.EventQueue.invokeAndWait(new Runnable() {
+                            @Override
+                            public void run() {
+                                splinePanel1.updatePlannerInfo(csStart, csEnd, null, null);
+                                boolean result = ask(sm);
+                                if (!result) {
+                                    DisconnectFromVehicle();
+                                }
+                            }
+                        });
+                        this.unsentGoal = csEnd;
+                    } else if (!sendCtrlPtsOk) {
+                        final String sm = "Failed trying to send control points " + csEnd + " from " + csStart + ":retry?";
+                        System.out.println(sm);
+                        java.awt.EventQueue.invokeAndWait(new Runnable() {
+                            @Override
+                            public void run() {
+                                splinePanel1.updatePlannerInfo(csStart, csEnd, null, null);
+                                boolean result = ask(sm);
+                                if (!result) {
+                                    DisconnectFromVehicle();
+                                }
+                            }
+                        });
+                        this.unsentGoal = csEnd;
+                    }
                     return false;
 
                 case 0x65:
@@ -2558,20 +3564,12 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                 System.out.println("h4:");
                 printByteArray(h4);
             }
-            final CarrierState cs0 = new CarrierState(segsx / 10.0,
-                    segsy / 10.0,
-                    new AngleD(sangle),
-                    CarrierStateTypeEnum.START,
-                    planner_point_size,
-                    vehicle_width,
-                    vehicle_front,
-                    vehicle_back);
             java.awt.EventQueue.invokeLater(new Runnable() {
                 @Override
                 public void run() {
                     DisconnectFromVehicle();
                     if (ask(s + " :  Retry?")) {
-                        if (splinePanel1.isManualGoal()) {
+                        if (splinePanel1.getGoalSource() == GoalSourceEnum.MANUAL) {
                             if (ask("Clear manual goal?")) {
                                 splinePanel1.updatePlannerInfo(cs0, null, null, null);
                             }
@@ -2586,7 +3584,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
     }
 
     public boolean ask(final String query) {
-        return (JOptionPane.showConfirmDialog(this, this.getTitle() + " : " + query, query, JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION);
+        return (JOptionPane.showConfirmDialog(this, query, this.getTitle() + " : " + query, JOptionPane.YES_NO_OPTION) == JOptionPane.YES_OPTION);
     }
     SocketAddress vehicleAddress = new InetSocketAddress("192.168.160.3", 4000);
 
@@ -2605,15 +3603,16 @@ public class SplineTestJFrame extends javax.swing.JFrame {
 
     public void ConnectToVehicle() {
         try {
+            this.updateAngle();
             this.last_sent_seg_id = -1;
             this.lastsegid = -1;
-            this.jCheckBoxMenuItemReplanOnAllChanges.setSelected(false);
-            this.jCheckBoxMenuItemReplanOnAllChanges.setEnabled(false);
-            this.splinePanel1.setReplanOnAllChanges(false);
+//            this.jCheckBoxMenuItemReplanOnAllChanges.setSelected(false);
+//            this.jCheckBoxMenuItemReplanOnAllChanges.setEnabled(false);
+//            this.splinePanel1.setReplanOnAllChanges(false);
             this.splinePanel1.setConnectedToVehicle(true);
             sendControlPointsCount = 0;
             this.jRadioButtonStart.setEnabled(false);
-            if (!this.splinePanel1.isManualGoal()) {
+            if (!(this.splinePanel1.getGoalSource() == GoalSourceEnum.MANUAL)) {
                 this.jRadioButtonGoal.setEnabled(false);
                 this.jRadioButtonPan.setSelected(true);
                 this.splinePanel1.setDrawMode(SplineDrawMode.PAN);
@@ -2648,7 +3647,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
 
     public void DisconnectFromVehicle() {
         try {
-            this.jCheckBoxMenuItemReplanOnAllChanges.setEnabled(true);
+//            this.jCheckBoxMenuItemReplanOnAllChanges.setEnabled(true);
             this.jRadioButtonStart.setEnabled(true);
             this.jRadioButtonGoal.setEnabled(true);
             sendControlPointsCount = 0;
@@ -2665,6 +3664,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
                 this.jCheckBoxMenuItemConnectedToVehicle.setSelected(false);
             }
             this.splinePanel1.setConnectedToVehicle(false);
+            this.updateAngle();
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -2773,23 +3773,33 @@ public class SplineTestJFrame extends javax.swing.JFrame {
     }
     // Variables declaration - do not modify//GEN-BEGIN:variables
     private javax.swing.ButtonGroup buttonGroupDrawMode;
+    private javax.swing.ButtonGroup buttonGroupGoalSource;
     private javax.swing.JButton jButtonClear;
     private javax.swing.JButton jButtonDelete;
+    private javax.swing.JButton jButtonDown;
     private javax.swing.JButton jButtonFit;
+    private javax.swing.JButton jButtonLeft;
+    private javax.swing.JButton jButtonModifyAngle;
+    private javax.swing.JButton jButtonRight;
+    private javax.swing.JButton jButtonSendManualGoal;
+    private javax.swing.JButton jButtonUp;
     private javax.swing.JButton jButtonZoomLess;
     private javax.swing.JButton jButtonZoomMore;
     private javax.swing.JCheckBox jCheckBoxCrab;
     private javax.swing.JCheckBox jCheckBoxExclusiveTracks;
+    private javax.swing.JCheckBox jCheckBoxIgnoreBoundaries;
     private javax.swing.JCheckBox jCheckBoxLabelControlPoints;
     private javax.swing.JCheckBox jCheckBoxLabelGrid;
+    private javax.swing.JCheckBoxMenuItem jCheckBoxMenuItemConfirmControlPoints;
     private javax.swing.JCheckBoxMenuItem jCheckBoxMenuItemConnectToObsDetect;
-    private javax.swing.JCheckBoxMenuItem jCheckBoxMenuItemConnectToVehicleManual;
     private javax.swing.JCheckBoxMenuItem jCheckBoxMenuItemConnectedToVehicle;
     private javax.swing.JCheckBoxMenuItem jCheckBoxMenuItemDebugObsDetComm;
     private javax.swing.JCheckBoxMenuItem jCheckBoxMenuItemDebugVehicleComm;
     private javax.swing.JCheckBoxMenuItem jCheckBoxMenuItemPlotAllCntlrPts;
+    private javax.swing.JCheckBoxMenuItem jCheckBoxMenuItemRecordPlannerStats;
     private javax.swing.JCheckBoxMenuItem jCheckBoxMenuItemReplanOnAllChanges;
     private javax.swing.JCheckBoxMenuItem jCheckBoxMenuItemShowBackground;
+    private javax.swing.JCheckBoxMenuItem jCheckBoxMenuItemStaticPlannerList;
     private javax.swing.JCheckBox jCheckBoxReverse;
     private javax.swing.JCheckBox jCheckBoxShowCenterCurve;
     private javax.swing.JCheckBox jCheckBoxShowControlPath;
@@ -2799,7 +3809,9 @@ public class SplineTestJFrame extends javax.swing.JFrame {
     private javax.swing.JCheckBox jCheckBoxShowPlanning;
     private javax.swing.JCheckBox jCheckBoxShowSideCurves;
     private javax.swing.JCheckBox jCheckBoxSimulation;
-    private javax.swing.JLabel jLabelStatus;
+    private javax.swing.JLabel jLabelAngle;
+    private javax.swing.JLabel jLabelPlannerStatus;
+    private javax.swing.JLabel jLabelVehicleStatus;
     private javax.swing.JMenu jMenu1;
     private javax.swing.JMenu jMenu2;
     private javax.swing.JMenu jMenuBackground;
@@ -2808,6 +3820,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
     private javax.swing.JMenu jMenuConnections;
     private javax.swing.JMenu jMenuImport;
     private javax.swing.JMenuItem jMenuItem1;
+    private javax.swing.JMenuItem jMenuItem2;
     private javax.swing.JMenuItem jMenuItemChangeFields;
     private javax.swing.JMenuItem jMenuItemClear;
     private javax.swing.JMenuItem jMenuItemDelete;
@@ -2818,28 +3831,41 @@ public class SplineTestJFrame extends javax.swing.JFrame {
     private javax.swing.JMenuItem jMenuItemImportDXFBackground;
     private javax.swing.JMenuItem jMenuItemImportDXFBoundaries;
     private javax.swing.JMenuItem jMenuItemLeft;
+    private javax.swing.JMenuItem jMenuItemPlotCurveRadius;
     private javax.swing.JMenuItem jMenuItemPlotLastCntrlPtsSent;
+    private javax.swing.JMenuItem jMenuItemPlotRecordedPlannerStats;
+    private javax.swing.JMenuItem jMenuItemPlotSplinesWithControlPoints;
     private javax.swing.JMenuItem jMenuItemReCheckPath;
     private javax.swing.JMenuItem jMenuItemRight;
     private javax.swing.JMenuItem jMenuItemSetProperty;
     private javax.swing.JMenuItem jMenuItemSwapGoalStart;
+    private javax.swing.JMenuItem jMenuItemTestAllPositons;
+    private javax.swing.JMenuItem jMenuItemTestPlanningParam;
     private javax.swing.JMenuItem jMenuItemUp;
     private javax.swing.JMenu jMenuMove;
+    private javax.swing.JMenu jMenuOptions;
     private javax.swing.JMenu jMenuRecentFiles;
     private javax.swing.JRadioButton jRadioButtonBoundary;
+    private javax.swing.JRadioButton jRadioButtonDrawPlanningRect;
     private javax.swing.JRadioButton jRadioButtonGoal;
     private javax.swing.JRadioButton jRadioButtonHorzBoundary;
+    private javax.swing.JRadioButtonMenuItem jRadioButtonMenuItemGoalFromConnection;
+    private javax.swing.JRadioButtonMenuItem jRadioButtonMenuItemGoalFromWaypoints;
+    private javax.swing.JRadioButtonMenuItem jRadioButtonMenuItemManualGoal;
     private javax.swing.JRadioButton jRadioButtonObstacle;
     private javax.swing.JRadioButton jRadioButtonPan;
     private javax.swing.JRadioButton jRadioButtonSelect;
     private javax.swing.JRadioButton jRadioButtonStart;
     private javax.swing.JRadioButton jRadioButtonVertBoundary;
+    private javax.swing.JRadioButton jRadioButtonWaypoint;
     private javax.swing.JScrollPane jScrollPane1;
     private javax.swing.JToolBar.Separator jSeparator1;
     private javax.swing.JToolBar.Separator jSeparator2;
     private javax.swing.JSeparator jSeparator3;
+    private javax.swing.JPopupMenu.Separator jSeparator4;
     private javax.swing.JToolBar jToolBar1;
     private javax.swing.JToolBar jToolBar2;
+    private javax.swing.JToolBar jToolBar3;
     private splinetest.SplinePanel splinePanel1;
     // End of variables declaration//GEN-END:variables
 }

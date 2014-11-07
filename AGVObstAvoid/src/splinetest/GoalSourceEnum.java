@@ -24,11 +24,9 @@ Software Copywrite/Warranty Disclaimer
 package splinetest;
 
 /**
- * Enumeration for a property of CarrierState.
- * 
+ *
  * @author Will Shackleford<shackle@nist.gov>
  */
-public enum CarrierStateTypeEnum {
-    START, GOAL, LIVE, ESTOPPED,WAYPOINT
-
+public enum GoalSourceEnum {
+    CONNECTION,MANUAL,WAYPOINTS
 }

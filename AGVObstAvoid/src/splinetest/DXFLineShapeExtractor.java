@@ -117,7 +117,7 @@ public class DXFLineShapeExtractor {
        while(it.hasNext()) {
            layers_list.add(((DXFLayer)(it.next())).getName());
        }
-       System.out.println("layers_list = " + layers_list);
+//       System.out.println("layers_list = " + layers_list);
        return layers_list;
    }
    
@@ -137,23 +137,23 @@ public class DXFLineShapeExtractor {
         try {
 
             DXFLayer layer = doc.getDXFLayer(layerid);
-            System.out.println("layer = " + layer);
-            System.out.println("layer.getName() = " + layer.getName());
+//            System.out.println("layer = " + layer);
+//            System.out.println("layer.getName() = " + layer.getName());
 
             Iterator it = layer.getDXFEntityTypeIterator();
-            System.out.println("Types:");
+//            System.out.println("Types:");
             while(it.hasNext()) {
                 System.out.print(it.next()+",");
             }
-            System.out.println("");
+//            System.out.println("");
             it = layer.getDXFEntityTypeIterator();
             while (it.hasNext()) {
                 String type = (String) it.next();
-                System.out.println("type = " + type);
+//                System.out.println("type = " + type);
                 //get all polylines from the layer
                 List entities = layer.getDXFEntities(type);
-                System.out.println("entities = " + entities);
-                System.out.println("entities.size() = " + entities.size());
+//                System.out.println("entities = " + entities);
+//                System.out.println("entities.size() = " + entities.size());
                 if (type.equals(DXFConstants.ENTITY_TYPE_LINE)) {
                     List<DXFLine> lines = (List<DXFLine>) entities;
                     for (DXFLine dxfl : lines) {
@@ -173,15 +173,15 @@ public class DXFLineShapeExtractor {
 
                             DXFVertex prev_vertex = pline.getVertex((i  + pline.getVertexCount()- 1)%pline.getVertexCount());
                             DXFVertex vertex = pline.getVertex(i);
-                            System.out.println("vertex = " + vertex);
-                            System.out.println("vertex.getX()*scale = " + vertex.getX()*scale);
-                            System.out.println("vertex.getY()*scale = " + vertex.getY()*scale);
+//                            System.out.println("vertex = " + vertex);
+//                            System.out.println("vertex.getX()*scale = " + vertex.getX()*scale);
+//                            System.out.println("vertex.getY()*scale = " + vertex.getY()*scale);
                             Line2Dd l2d = new Line2Dd(
                                     prev_vertex.getX()*scale,
                                     prev_vertex.getY()*scale,
                                     vertex.getX()*scale,
                                     vertex.getY()*scale);
-                            System.out.println("l2d = [(" + l2d.x1 + "," + l2d.y1 + "),(" + l2d.x2 + "," + l2d.y2 + ")]");
+//                            System.out.println("l2d = [(" + l2d.x1 + "," + l2d.y1 + "),(" + l2d.x2 + "," + l2d.y2 + ")]");
                             line_list.add(l2d);
                         }
                     }
@@ -193,15 +193,15 @@ public class DXFLineShapeExtractor {
 
                             DXFVertex prev_vertex = pline.getVertex((i + pline.getVertexCount()  - 1)%pline.getVertexCount());
                             DXFVertex vertex = pline.getVertex(i);
-                            System.out.println("vertex = " + vertex);
-                            System.out.println("vertex.getX()*scale = " + vertex.getX()*scale);
-                            System.out.println("vertex.getY()*scale = " + vertex.getY()*scale);
+//                            System.out.println("vertex = " + vertex);
+//                            System.out.println("vertex.getX()*scale = " + vertex.getX()*scale);
+//                            System.out.println("vertex.getY()*scale = " + vertex.getY()*scale);
                             Line2Dd l2d = new Line2Dd(
                                     prev_vertex.getX()*scale,
                                     prev_vertex.getY()*scale,
                                     vertex.getX()*scale,
                                     vertex.getY()*scale);
-                            System.out.println("l2d = [(" + l2d.x1 + "," + l2d.y1 + "),(" + l2d.x2 + "," + l2d.y2 + ")]");
+//                            System.out.println("l2d = [(" + l2d.x1 + "," + l2d.y1 + "),(" + l2d.x2 + "," + l2d.y2 + ")]");
                             line_list.add(l2d);
                         }
                     }
