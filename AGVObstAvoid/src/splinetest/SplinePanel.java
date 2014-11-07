@@ -2283,8 +2283,14 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
         if (this.ShowGrid) {
             this.paintGrid(g2d);
         }
+        PlannerInput pi = this.getPlannerInput();
+        
         g2d.translate(translateX, translateY);
         g2d.scale(zoomScale, zoomScale);
+        if(null != pi && null != pi.rectB) {
+            g.setColor(Color.lightGray);
+            g2d.draw(pi.rectB);
+        }
         if (null != this.backgroundShapes && this.showBackgroundShapes) {
             g2d.setColor(Color.DARK_GRAY);
             for (ShapeWTransform swt : this.backgroundShapes) {
@@ -4336,6 +4342,34 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
     javax.swing.Timer sim_timer;
     private List<CarrierState> carriers;
 
+    public List<CarrierState> getSelectedCarriers() {
+        List<CarrierState> l = new LinkedList<>();
+        if(null != carriers) {
+            for(CarrierState cs : carriers) {
+            if(cs.selected && !l.contains(cs))
+                l.add(cs);
+            }
+        }
+        if(null != waypoints) {
+            for(CarrierState cs : waypoints) {
+            if(cs.selected && !l.contains(cs))
+                l.add(cs);
+            }
+        }
+        if(null != this.goalPoints) {
+            for(CarrierState cs : goalPoints) {
+            if(cs.selected && !l.contains(cs))
+                l.add(cs);
+            }
+        }
+        if(null != this.startPoints) {
+            for(CarrierState cs : startPoints) {
+            if(cs.selected && !l.contains(cs))
+                l.add(cs);
+            }
+        }
+        return l;
+    }
     /**
      * Get the value of carriers
      *

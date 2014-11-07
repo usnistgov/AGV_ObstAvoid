@@ -76,7 +76,7 @@ public class Planner {
     public static List<PlannerPoint> staticPlannerList = null;
 
     public static void resetPlannerList(List<PlannerPoint> ll) {
-        for(int i = 0; i < ll.size(); i++) {
+        for (int i = 0; i < ll.size(); i++) {
             PlannerPoint pp = ll.get(i);
             pp.checked = false;
             pp.distFromGoal = Double.POSITIVE_INFINITY;
@@ -91,7 +91,7 @@ public class Planner {
             List<? extends CarrierState> startList,
             List<? extends CarrierState> goalList,
             List<? extends CarrierState> waypointsList) {
-        
+
         if (pi.use_static_planner_list && staticPlannerList != null) {
             resetPlannerList(staticPlannerList);
             return staticPlannerList;
@@ -99,7 +99,7 @@ public class Planner {
         pi.create_planner_list_start_cpu_ns = Planner.getCpuTimeNs();
         pi.create_planner_list_start_world_ms = System.currentTimeMillis();
         double veh_width = pi.veh_width + pi.path_uncertainty;
-        
+
         List<PlannerPoint> ll = new LinkedList<PlannerPoint>();
         for (double x = pi.rectB.x; x < pi.rectB.x + pi.rectB.width; x += pi.plannerResolution) {
             for (double y = pi.rectB.y; y < pi.rectB.y + pi.rectB.height; y += pi.plannerResolution) {
@@ -116,7 +116,7 @@ public class Planner {
             if (null != boundaries) {
                 for (int k = 0; k < boundaries.size(); k++) {
                     Boundary b = boundaries.get(k);
-                    if (b.ptSegDist(pp) < veh_width / 2f+ pi.plannerResolution) {
+                    if (b.ptSegDist(pp) < veh_width / 2f + pi.plannerResolution) {
                         ll.remove(i);
                         i--;
                         break;
@@ -130,6 +130,29 @@ public class Planner {
         return staticPlannerList;
     }
 
+    private static void adjustRectB(PlannerInput pi, Point2Dd pt) {
+        if (pi.rectB != null) {
+            if (pi.rectB.x > pt.x - pi.min_turn_radius * 2) {
+                double dx = pi.rectB.x - pt.x - pi.min_turn_radius * 2;
+                pi.rectB.width += dx;
+                pi.rectB.x -= dx;
+            }
+            if (pi.rectB.x + pi.rectB.width < pt.x + pi.min_turn_radius * 2) {
+                double dx = pt.x + pi.min_turn_radius * 2 - (pi.rectB.x + pi.rectB.width);
+                pi.rectB.width += dx;
+            }
+            if (pi.rectB.y > pt.y - pi.min_turn_radius * 2) {
+                double dx = pi.rectB.y - pt.y - pi.min_turn_radius * 2;
+                pi.rectB.height += dx;
+                pi.rectB.y -= dx;
+            }
+            if (pi.rectB.y + pi.rectB.height < pt.y + pi.min_turn_radius * 2) {
+                double dx = pt.y + pi.min_turn_radius * 2 - (pi.rectB.y + pi.rectB.height);
+                pi.rectB.height += dx;
+            }
+        }
+    }
+
     public static List<PlannerPoint> createPlannerList(PlannerInput pi,
             List<? extends CarrierState> startList,
             List<? extends CarrierState> goalList,
@@ -139,7 +162,7 @@ public class Planner {
         }
         pi.create_planner_list_start_cpu_ns = Planner.getCpuTimeNs();
         pi.create_planner_list_start_world_ms = System.currentTimeMillis();
-        
+
         goalPPList = new LinkedList<>();
         startPPList = new LinkedList<>();
         List<Obstacle> obstacles = pi.obstacles;
@@ -147,7 +170,7 @@ public class Planner {
         double front = pi.front + pi.path_uncertainty;
         double back = pi.back + pi.path_uncertainty;
         double veh_width = pi.veh_width + pi.path_uncertainty;
-        
+
 //        boolean reverse = pi.reverse;
         double max_pt2pt_dist = pi.max_pt2pt_dist;
         List<PlannerPoint> ll = new LinkedList<PlannerPoint>();
@@ -236,7 +259,7 @@ public class Planner {
 //                }
             }
         }
-        
+
         if (pi.min_turn_radius > 0 && !pi.crab) {
             if (null != pi.start) {
                 if (!pi.crab) {
@@ -244,6 +267,7 @@ public class Planner {
                 }
                 Point2Dd pt = new Point2Dd(pi.start.x + pi.segStartLength * pi.start.getAngle().cos(),
                         pi.start.y + pi.segStartLength * pi.start.getAngle().sin());
+                adjustRectB(pi,pt);
                 ll = surroundPoint(pi, pt, ll);
 //                for (double angle = 0; angle < 2 * Math.PI; angle += Math.PI / 12.0) {
 //                    double cos_angle = Math.cos(angle);
@@ -261,6 +285,8 @@ public class Planner {
                 Point2Dd pt = new Point2Dd(pi.goal.x - pi.segStartLength * pi.goal.getAngle().cos(),
                         pi.goal.y - pi.segStartLength * pi.goal.getAngle().sin());
                 ll = surroundPoint(pi, pt, ll);
+                adjustRectB(pi,pt);
+
 //                for (double angle = 0; angle < 2 * Math.PI; angle += Math.PI / 12.0) {
 //                    double cos_angle = Math.cos(angle);
 //                    double sin_angle = Math.sin(angle);
@@ -275,6 +301,8 @@ public class Planner {
                     Point2Dd pt = new Point2Dd(cs.x + pi.segStartLength * cs.getAngle().cos(),
                             cs.y + pi.segStartLength * cs.getAngle().sin());
                     ll = surroundPoint(pi, pt, ll);
+                    adjustRectB(pi,pt);
+                
 //                    for (double angle = 0; angle < 2 * Math.PI; angle += Math.PI / 12.0) {
 //                        double cos_angle = Math.cos(angle);
 //                        double sin_angle = Math.sin(angle);
@@ -290,6 +318,8 @@ public class Planner {
                     Point2Dd pt = new Point2Dd(cs.x - pi.segStartLength * cs.getAngle().cos(),
                             cs.y - pi.segStartLength * cs.getAngle().sin());
                     ll = surroundPoint(pi, pt, ll);
+                    adjustRectB(pi,pt);
+                
 //                    for (double angle = 0; angle < 2 * Math.PI; angle += Math.PI / 12.0) {
 //                        double cos_angle = Math.cos(angle);
 //                        double sin_angle = Math.sin(angle);
@@ -304,6 +334,7 @@ public class Planner {
                 for (CarrierState cs : waypointsList) {
                     Point2Dd pt = new Point2Dd(cs.x - pi.segStartLength * cs.getAngle().cos(),
                             cs.y - pi.segStartLength * cs.getAngle().sin());
+                    adjustRectB(pi,pt);
                     ll = surroundPoint(pi, pt, ll);
                     Point2Dd pt2 = new Point2Dd(cs.x + pi.segStartLength * cs.getAngle().cos(),
                             cs.y + pi.segStartLength * cs.getAngle().sin());
@@ -352,12 +383,12 @@ public class Planner {
                     if (b.ptSegDist(ppi) < veh_width / 2f) {
                         ll.remove(i);
                         i--;
-                        pp_removed=true;
+                        pp_removed = true;
                         break;
                     }
                 }
             }
-            if(pp_removed) {
+            if (pp_removed) {
                 continue;
             }
         }
@@ -374,7 +405,7 @@ public class Planner {
 
         pi.create_planner_list_end_cpu_ns = Planner.getCpuTimeNs();
         pi.create_planner_list_end_world_ms = System.currentTimeMillis();
-        
+
 //        System.out.println("ll.size() = "+ll.size());
         return ll;
     }
@@ -469,11 +500,11 @@ public class Planner {
     }
 
     public static void closeRecordStatsFile() {
-        if(Planner.recordStatsFile != null) {
+        if (Planner.recordStatsFile != null) {
             Planner.recordStatsFile = null;
         }
     }
-    
+
     public static void recordStats(PlannerInput pi,
             List<PlannerPoint> pplist,
             List<PlannerPoint> output_list,
@@ -491,10 +522,10 @@ public class Planner {
             if (null == recordStatsFile) {
                 new_file = true;
                 recordStatsFile = File.createTempFile("planner_stats_", ".csv");
-                System.out.println("Recording planner stats to "+recordStatsFile.getCanonicalPath());
+                System.out.println("Recording planner stats to " + recordStatsFile.getCanonicalPath());
             }
-            
-            ps = new PrintStream(new FileOutputStream(recordStatsFile,true));
+
+            ps = new PrintStream(new FileOutputStream(recordStatsFile, true));
             if (new_file) {
                 ps.println("wall_time_start_ms,create_planner_list_start_world_ms,wall_time_diff_s,cpu_time_diff_s,create_list_wall_time_diff_s,create_list_cpu_time_diff_s,total_wall_time_diff_s, total_cpu_time_diff_s,pplist_size,path_found,output_list_size,output_list_length,start_x,start_y,start_angle,goal_x,goal_y,goal_angle");
             }
@@ -512,7 +543,7 @@ public class Planner {
                     + total_wall_time_diff_s + ","
                     + total_cpu_time_diff_s + ","
                     + ((pplist != null) ? pplist.size() : 0) + ","
-                    + ((output_list != null && output_list.size() > 2)?1:0)+","
+                    + ((output_list != null && output_list.size() > 2) ? 1 : 0) + ","
                     + ((output_list != null) ? output_list.size() : 0) + ","
                     + listLength(output_list) + ","
                     + pi.start.x + "," + pi.start.y + "," + pi.start.getAngle().toDegrees() + ","
@@ -1487,5 +1518,5 @@ public class Planner {
         }
         return true;
     }
-    
+
 }

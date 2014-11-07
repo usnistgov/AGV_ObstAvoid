@@ -24,10 +24,8 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Point;
 import java.awt.Rectangle;
-import java.awt.Toolkit;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
-import java.awt.geom.Rectangle2D;
 import java.beans.PropertyChangeEvent;
 import java.beans.PropertyChangeListener;
 import java.io.BufferedReader;
@@ -2063,12 +2061,27 @@ public class SplineTestJFrame extends javax.swing.JFrame {
         this.plotSplineCurveRadius();
     }//GEN-LAST:event_jMenuItemPlotCurveRadiusActionPerformed
 
+    
+    private void setStartingAngle(double angle) {
+        this.splinePanel1.setStartingAngle(angle);
+        List<CarrierState> l = this.splinePanel1.getSelectedCarriers();
+        if(null != l && l.size() > 0) {
+           if(this.ask("Adjust angle of "+l.size()+" selected poses?")) {
+               double angle_rad = Math.toRadians(angle);
+               for(CarrierState cs :l ) {
+                   cs.setAngle(new AngleD(angle_rad));
+               }
+           }
+        }
+        this.splinePanel1.repaint();
+    }
+    
     private void jButtonModifyAngleActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonModifyAngleActionPerformed
         try {
             String res = JOptionPane.showInputDialog(this, "Angle for new Goal/Start positions?",
                     this.splinePanel1.getStartingAngle());
             if (null != res) {
-                this.splinePanel1.setStartingAngle(Double.valueOf(res.trim()));
+                this.setStartingAngle(Double.valueOf(res.trim()));
             }
         } catch (Exception exception) {
             exception.printStackTrace();
@@ -2118,22 +2131,22 @@ public class SplineTestJFrame extends javax.swing.JFrame {
     }//GEN-LAST:event_jButtonSendManualGoalActionPerformed
 
     private void jButtonUpActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonUpActionPerformed
-        this.splinePanel1.setStartingAngle(90.0);
+        this.setStartingAngle(90.0);
         this.updateAngle();
     }//GEN-LAST:event_jButtonUpActionPerformed
 
     private void jButtonDownActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonDownActionPerformed
-        this.splinePanel1.setStartingAngle(270.0);
+        this.setStartingAngle(270.0);
         this.updateAngle();
     }//GEN-LAST:event_jButtonDownActionPerformed
 
     private void jButtonLeftActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonLeftActionPerformed
-        this.splinePanel1.setStartingAngle(180.0);
+        this.setStartingAngle(180.0);
         this.updateAngle();
     }//GEN-LAST:event_jButtonLeftActionPerformed
 
     private void jButtonRightActionPerformed(java.awt.event.ActionEvent evt) {//GEN-FIRST:event_jButtonRightActionPerformed
-        this.splinePanel1.setStartingAngle(0.0);
+        this.setStartingAngle(0.0);
         this.updateAngle();
     }//GEN-LAST:event_jButtonRightActionPerformed
 
