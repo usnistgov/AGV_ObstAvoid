@@ -1750,6 +1750,9 @@ public class SplinePanel extends JPanel implements MouseListener, MouseMotionLis
      */
     public void setStartingAngle(double startingAngle) {
         this.startingAngle = startingAngle;
+        if (this.replanOnAllChanges) {
+            this.replan();
+        }
     }
     private double segStartLength = 50.0;
 
