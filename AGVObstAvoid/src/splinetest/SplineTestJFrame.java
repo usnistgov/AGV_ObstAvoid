@@ -2065,7 +2065,7 @@ public class SplineTestJFrame extends javax.swing.JFrame {
     private void setStartingAngle(double angle) {
         List<CarrierState> l = this.splinePanel1.getSelectedCarriers();
         if(null != l && l.size() > 0) {
-           if(this.ask("Adjust angle of "+l.size()+" selected poses?")) {
+           if(true) { //this.ask("Adjust angle of "+l.size()+" selected poses?")) {
                double angle_rad = Math.toRadians(angle);
                for(CarrierState cs :l ) {
                    cs.setAngle(new AngleD(angle_rad));
